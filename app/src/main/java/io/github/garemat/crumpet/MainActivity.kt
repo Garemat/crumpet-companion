@@ -18,7 +18,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.health.connect.client.PermissionController
@@ -61,6 +63,14 @@ private enum class Dest(val route: String, val label: String, val icon: ImageVec
 private fun CrumpetApp(vm: AppViewModel = viewModel()) {
     val nav = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Start (and keep) the gateway connection whenever paired config is present — on launch
+    // once DataStore loads, and right after Save & connect writes it. Race-free vs the service.
+    val pairedUrl by vm.serverUrl.collectAsStateWithLifecycle()
+    val pairedToken by vm.token.collectAsStateWithLifecycle()
+    LaunchedEffect(pairedUrl, pairedToken) {
+        if (pairedUrl.isNotBlank() && pairedToken.isNotBlank()) PresenceService.start(context)
+    }
 
     val healthLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract(),
@@ -116,7 +126,12 @@ private fun CrumpetApp(vm: AppViewModel = viewModel()) {
                             ),
                         )
                     },
-                    onConnect = { PresenceService.start(context) },
+                    onConnect = { u, t ->
+                        vm.savePairing(u, t)  // LaunchedEffect above starts the service once saved
+                        android.widget.Toast.makeText(
+                            context, "Saved — connecting…", android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    },
                 )
             }
         }

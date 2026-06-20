@@ -68,6 +68,36 @@ fun HomeScreen(vm: AppViewModel, onChat: () -> Unit) {
             }
         }
 
+        val update by vm.update.collectAsStateWithLifecycle()
+        val progress by vm.downloadProgress.collectAsStateWithLifecycle()
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        update?.let { up ->
+            Spacer(Modifier.height(14.dp))
+            SoftCard(fill = io.github.garemat.crumpet.ui.theme.Bg3) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Update available", color = Brass, style = MaterialTheme.typography.titleMedium)
+                        Text("v${up.version} — you're on v${vm.currentVersion}", color = Faint, fontSize = 11.sp)
+                    }
+                    if (progress == null) {
+                        androidx.compose.material3.TextButton(onClick = { vm.downloadAndInstall(ctx) }) {
+                            Text("Update", color = Brass, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Text("${((progress ?: 0f) * 100).toInt()}%", color = Brass, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (progress != null) {
+                    Spacer(Modifier.height(8.dp))
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { progress ?: 0f },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Brass,
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(16.dp))
         SoftCard {
             Text(

@@ -48,14 +48,18 @@ fun SetupScreen(
     vm: AppViewModel,
     onRequestHealth: () -> Unit,
     onRequestOther: () -> Unit,
-    onConnect: () -> Unit,
+    onConnect: (String, String) -> Unit,
 ) {
     val savedUrl by vm.serverUrl.collectAsStateWithLifecycle()
     val savedToken by vm.token.collectAsStateWithLifecycle()
     val connected by vm.connected.collectAsStateWithLifecycle()
+    val status by vm.status.collectAsStateWithLifecycle()
+    val ghSaved by vm.ghToken.collectAsStateWithLifecycle()
+    val update by vm.update.collectAsStateWithLifecycle()
 
     var url by remember(savedUrl) { mutableStateOf(savedUrl) }
     var token by remember(savedToken) { mutableStateOf(savedToken) }
+    var gh by remember(ghSaved) { mutableStateOf(ghSaved) }
 
     Column(
         Modifier
@@ -75,10 +79,7 @@ fun SetupScreen(
                         .background(if (connected) Ok else Muted),
                 )
                 Spacer(Modifier.width(10.dp))
-                Text(
-                    if (connected) "Connected over WireGuard" else "Not connected",
-                    color = if (connected) Ok else Muted,
-                )
+                Text(status, color = if (connected) Ok else Muted)
             }
             Spacer(Modifier.height(14.dp))
             Field("Brain URL  (e.g. https://crumpet)", url) { url = it }
@@ -86,7 +87,7 @@ fun SetupScreen(
             Field("Device token", token, password = true) { token = it }
             Spacer(Modifier.height(14.dp))
             Button(
-                onClick = { vm.savePairing(url, token); onConnect() },
+                onClick = { onConnect(url.trim(), token.trim()) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Brass, contentColor = Color(0xFF22170C)),
             ) { Text("Save & connect") }
@@ -122,6 +123,24 @@ fun SetupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Brass, contentColor = Color(0xFF22170C)),
             ) { Text("Sync now") }
+        }
+
+        Spacer(Modifier.height(22.dp))
+        Eyebrow("App updates")
+        Spacer(Modifier.height(10.dp))
+        SoftCard {
+            Text(
+                "You're on v${vm.currentVersion}." +
+                    (update?.let { "  Update to v${it.version} is available — see Home." } ?: "  Up to date."),
+                color = Muted, fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            Field("GitHub token (only needed while the repo is private)", gh, password = true) { gh = it }
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = { vm.setGhToken(gh); vm.checkForUpdate() },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Check for updates", color = Jade) }
         }
         Spacer(Modifier.height(20.dp))
     }

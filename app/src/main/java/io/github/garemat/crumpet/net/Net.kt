@@ -56,6 +56,8 @@ object Net {
     val frames = _frames.asSharedFlow()
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected
+    private val _status = MutableStateFlow("Not connected")
+    val status: StateFlow<String> = _status     // human-readable, surfaced in Setup for feedback
     private val outbox = Channel<String>(Channel.BUFFERED)
 
     suspend fun send(text: String) {
@@ -64,12 +66,17 @@ object Net {
 
     /** Maintain the WS with reconnect-on-drop until the calling scope is cancelled. */
     suspend fun maintain(base: String, token: String) {
-        if (base.isBlank() || token.isBlank()) return
+        if (base.isBlank() || token.isBlank()) {
+            _status.value = "Enter the brain URL + token first"
+            return
+        }
         val wsUrl = base.replaceFirst("http", "ws") + "/chat?token=" + token
         while (coroutineContext.isActive) {
+            _status.value = "Connecting…"
             try {
                 client.webSocket(wsUrl) {
                     _connected.value = true
+                    _status.value = "Connected over WireGuard"
                     val sender = launch { for (m in outbox) send(Frame.Text(m)) }
                     try {
                         for (frame in incoming) {
@@ -82,11 +89,11 @@ object Net {
                         sender.cancel()
                     }
                 }
-            } catch (_: Exception) {
-                // network blip / VPN down — fall through to backoff + retry
+            } catch (e: Exception) {
+                _status.value = "Can't reach Crumpet — " + (e.message?.take(60) ?: "check the URL/VPN")
             }
             _connected.value = false
-            delay(4000)
+            if (coroutineContext.isActive) delay(4000)
         }
     }
 }

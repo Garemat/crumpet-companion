@@ -15,14 +15,20 @@ private val Context.dataStore by preferencesDataStore(name = "crumpet")
 class Prefs(private val context: Context) {
     private val URL = stringPreferencesKey("server_url")
     private val TOKEN = stringPreferencesKey("token")
+    private val GH_TOKEN = stringPreferencesKey("gh_token")  // optional, for self-update on a private repo
     private val WATERMARK = longPreferencesKey("sync_watermark")  // epoch millis; read HC since this
 
     val serverUrl: Flow<String> = context.dataStore.data.map { it[URL] ?: "" }
     val token: Flow<String> = context.dataStore.data.map { it[TOKEN] ?: "" }
+    val ghToken: Flow<String> = context.dataStore.data.map { it[GH_TOKEN] ?: "" }
     val watermark: Flow<Long> = context.dataStore.data.map { it[WATERMARK] ?: 0L }
 
     suspend fun setPairing(url: String, token: String) {
         context.dataStore.edit { it[URL] = url.trim().trimEnd('/'); it[TOKEN] = token.trim() }
+    }
+
+    suspend fun setGhToken(value: String) {
+        context.dataStore.edit { it[GH_TOKEN] = value.trim() }
     }
 
     suspend fun setWatermark(epochMillis: Long) {

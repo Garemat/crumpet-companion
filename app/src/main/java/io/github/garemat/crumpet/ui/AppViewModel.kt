@@ -11,11 +11,13 @@ import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.health.CalendarRepo
 import io.github.garemat.crumpet.health.HealthRepo
 import io.github.garemat.crumpet.net.Net
+import io.github.garemat.crumpet.update.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -31,6 +33,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val token: StateFlow<String> =
         prefs.token.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     val connected: StateFlow<Boolean> = Net.connected
+    val status: StateFlow<String> = Net.status
 
     private val _snapshot = MutableStateFlow(HealthSnapshot())
     val snapshot = _snapshot.asStateFlow()
@@ -41,11 +44,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _thinking = MutableStateFlow(false)
     val thinking = _thinking.asStateFlow()
 
+    // self-update
+    val ghToken: StateFlow<String> = prefs.ghToken.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+    private val _update = MutableStateFlow<Updater.Available?>(null)
+    val update = _update.asStateFlow()
+    private val _downloadProgress = MutableStateFlow<Float?>(null)
+    val downloadProgress = _downloadProgress.asStateFlow()
+    val currentVersion: String = runCatching {
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0.0.0"
+    }.getOrDefault("0.0.0")
+
     val paired: Boolean get() = serverUrl.value.isNotBlank() && token.value.isNotBlank()
 
     init {
         viewModelScope.launch { Net.frames.collect(::handleFrame) }
         refresh()
+        checkForUpdate()
+    }
+
+    fun checkForUpdate() = viewModelScope.launch {
+        val tok = prefs.ghToken.first()
+        _update.value = withContext(Dispatchers.IO) { Updater.check(currentVersion, tok) }
+    }
+
+    fun setGhToken(value: String) = viewModelScope.launch { prefs.setGhToken(value) }
+
+    fun downloadAndInstall(context: android.content.Context) = viewModelScope.launch {
+        val avail = _update.value ?: return@launch
+        val tok = prefs.ghToken.first()
+        _downloadProgress.value = 0f
+        runCatching {
+            val apk = withContext(Dispatchers.IO) {
+                Updater.download(context, avail.tag, tok) { _downloadProgress.value = it }
+            }
+            Updater.install(context, apk)
+        }
+        _downloadProgress.value = null
     }
 
     fun refresh() = viewModelScope.launch {
