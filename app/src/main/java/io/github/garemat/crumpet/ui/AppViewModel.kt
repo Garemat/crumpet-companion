@@ -43,6 +43,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val chat = _chat.asStateFlow()
     private val _thinking = MutableStateFlow(false)
     val thinking = _thinking.asStateFlow()
+    private val _syncMsg = MutableStateFlow<String?>(null)
+    val syncMsg = _syncMsg.asStateFlow()
 
     // self-update
     val ghToken: StateFlow<String> = prefs.ghToken.stateIn(viewModelScope, SharingStarted.Eagerly, "")
@@ -88,16 +90,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun syncNow() = viewModelScope.launch {
-        withContext(Dispatchers.IO) {
-            val (base, tok, wm) = prefs.config()
-            if (base.isNotBlank() && tok.isNotBlank()) {
-                runCatching {
-                    val started = System.currentTimeMillis()
-                    Net.ingest(base, tok, health.recordsSince(wm))
-                    prefs.setWatermark(started)
-                }
+        _syncMsg.value = "Syncing…"
+        val msg = withContext(Dispatchers.IO) {
+            val (base, tok, _) = prefs.config()
+            when {
+                base.isBlank() || tok.isBlank() -> "Not paired — set the brain URL + token in Connect first."
+                !health.available -> "Health Connect isn't available on this device."
+                !health.hasAllPermissions() -> "Health Connect permissions aren't all granted — tap Grant above."
+                else -> runCatching {
+                    val records = health.recentRecords(30)
+                    if (records.isEmpty())
+                        "Read 0 records from Health Connect — nothing's being written there yet (check the source apps, e.g. MyFitnessPal → Health Connect)."
+                    else {
+                        val c = Net.ingest(base, tok, records).counts
+                        val parts = listOf("nutrition", "weight", "steps", "sleep", "workouts")
+                            .mapNotNull { k -> c[k]?.takeIf { it > 0 }?.let { "$it $k" } }
+                        "Synced ${records.size} record(s)" + if (parts.isEmpty()) " (all up to date)." else ": ${parts.joinToString(", ")}."
+                    }
+                }.getOrElse { e -> "Sync failed: ${e.message?.take(90) ?: "unknown error"}" }
             }
         }
+        _syncMsg.value = msg
         refresh()
     }
 

@@ -60,11 +60,22 @@ class HealthRepo(private val context: Context) {
         }.getOrDefault(emptyList())
     }
 
-    /** Build the ingest batch for everything new since [sinceMillis]. Daily families aggregate per day. */
-    suspend fun recordsSince(sinceMillis: Long): List<HealthRecord> {
+    private fun sourceApp(pkg: String): String = when {
+        pkg.contains("hevy", true) -> "Hevy"
+        pkg.contains("fitbit", true) -> "Fitbit"
+        pkg.contains("myfitnesspal", true) -> "MyFitnessPal"
+        pkg.contains("bend", true) -> "Bend"
+        pkg.contains("strava", true) -> "Strava"
+        pkg.contains("healthdata") || pkg.contains("healthconnect") -> "Health Connect"
+        pkg.isBlank() -> "Health Connect"
+        else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+    }
+
+    /** Build the ingest batch over a rolling [days] window. The brain dedupes/upserts, so re-sending
+     *  overlapping data is safe — and it avoids missing anything logged before a stale watermark. */
+    suspend fun recentRecords(days: Int = 30): List<HealthRecord> {
         if (client == null) return emptyList()
-        val since = if (sinceMillis > 0) Instant.ofEpochMilli(sinceMillis)
-        else Instant.now().minus(Duration.ofDays(30))
+        val since = Instant.now().minus(Duration.ofDays(days.toLong()))
         val until = Instant.now()
         val out = mutableListOf<HealthRecord>()
 
@@ -108,7 +119,7 @@ class HealthRepo(private val context: Context) {
                 "workout",
                 uid = r.metadata.id,
                 title = r.title ?: "Workout",
-                detail = "$mins min",
+                detail = "$mins min · ${sourceApp(r.metadata.dataOrigin.packageName)}",
                 at = LocalDateTime.ofInstant(r.startTime, zone).format(atFmt),
             )
         }
@@ -139,7 +150,7 @@ class HealthRepo(private val context: Context) {
             .take(4)
             .map {
                 val m = Duration.between(it.startTime, it.endTime).toMinutes()
-                WorkoutLine(it.title ?: "Workout", "$m min", "Health Connect")
+                WorkoutLine(it.title ?: "Workout", "$m min", sourceApp(it.metadata.dataOrigin.packageName))
             }
 
         return HealthSnapshot(

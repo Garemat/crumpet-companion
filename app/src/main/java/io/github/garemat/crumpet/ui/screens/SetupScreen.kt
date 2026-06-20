@@ -56,6 +56,7 @@ fun SetupScreen(
     val status by vm.status.collectAsStateWithLifecycle()
     val ghSaved by vm.ghToken.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
+    val syncMsg by vm.syncMsg.collectAsStateWithLifecycle()
 
     var url by remember(savedUrl) { mutableStateOf(savedUrl) }
     var token by remember(savedToken) { mutableStateOf(savedToken) }
@@ -123,6 +124,10 @@ fun SetupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Brass, contentColor = Color(0xFF22170C)),
             ) { Text("Sync now") }
+            syncMsg?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = if (it.startsWith("Synced")) Ok else Muted, fontSize = 12.sp)
+            }
         }
 
         Spacer(Modifier.height(22.dp))

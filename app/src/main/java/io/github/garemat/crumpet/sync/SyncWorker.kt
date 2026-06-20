@@ -24,10 +24,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         if (!repo.available || !repo.hasAllPermissions()) return Result.success()
 
         return try {
-            val started = System.currentTimeMillis()
-            val records = repo.recordsSince(watermark)
-            Net.ingest(base, token, records)
-            prefs.setWatermark(started)
+            // Rolling window + idempotent brain → no watermark gymnastics, nothing missed.
+            Net.ingest(base, token, repo.recentRecords(30))
+            prefs.setWatermark(System.currentTimeMillis())
             Result.success()
         } catch (_: Exception) {
             Result.retry()
