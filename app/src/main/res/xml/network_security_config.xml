@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Plain HTTP is allowed ONLY to the WireGuard tunnel (the brain) — the tunnel already
+         encrypts it. Everything else (e.g. GitHub update checks) stays HTTPS, system-CA only. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.99.0.1</domain>
+    </domain-config>
+</network-security-config>
