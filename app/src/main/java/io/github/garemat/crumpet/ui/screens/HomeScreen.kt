@@ -70,6 +70,7 @@ fun HomeScreen(vm: AppViewModel, onChat: () -> Unit) {
 
         val update by vm.update.collectAsStateWithLifecycle()
         val progress by vm.downloadProgress.collectAsStateWithLifecycle()
+        val updateError by vm.updateError.collectAsStateWithLifecycle()
         val ctx = androidx.compose.ui.platform.LocalContext.current
         update?.let { up ->
             Spacer(Modifier.height(14.dp))
@@ -94,6 +95,10 @@ fun HomeScreen(vm: AppViewModel, onChat: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         color = Brass,
                     )
+                }
+                updateError?.let { err ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(err, color = Coral, fontSize = 11.sp)
                 }
             }
         }

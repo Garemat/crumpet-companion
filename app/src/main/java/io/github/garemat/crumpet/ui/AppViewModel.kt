@@ -52,6 +52,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val update = _update.asStateFlow()
     private val _downloadProgress = MutableStateFlow<Float?>(null)
     val downloadProgress = _downloadProgress.asStateFlow()
+    private val _updateError = MutableStateFlow<String?>(null)
+    val updateError = _updateError.asStateFlow()
     val currentVersion: String = runCatching {
         app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0.0.0"
     }.getOrDefault("0.0.0")
@@ -74,13 +76,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadAndInstall(context: android.content.Context) = viewModelScope.launch {
         val avail = _update.value ?: return@launch
         val tok = prefs.ghToken.first()
+        _updateError.value = null
         _downloadProgress.value = 0f
         runCatching {
             val apk = withContext(Dispatchers.IO) {
                 Updater.download(context, avail.tag, tok) { _downloadProgress.value = it }
             }
             Updater.install(context, apk)
-        }
+        }.onFailure { e -> _updateError.value = "Update failed: ${e.message?.take(100) ?: "unknown error"}" }
         _downloadProgress.value = null
     }
 
