@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App is fully Compose-themed; this base just sets a warm dark window + edge-to-edge. -->
+    <style name="Theme.Crumpet" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/espresso</item>
+        <item name="android:statusBarColor">@color/espresso</item>
+        <item name="android:navigationBarColor">@color/espresso</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

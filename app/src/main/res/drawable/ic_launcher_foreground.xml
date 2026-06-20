@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- a dapper little turtle, espresso on the brass background -->
+    <!-- feet -->
+    <path android:fillColor="#17120E" android:pathData="M36,72 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+    <path android:fillColor="#17120E" android:pathData="M72,72 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+    <path android:fillColor="#17120E" android:pathData="M34,46 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+    <path android:fillColor="#17120E" android:pathData="M74,46 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+    <!-- head -->
+    <path android:fillColor="#17120E" android:pathData="M54,34 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+    <!-- top hat -->
+    <path android:fillColor="#17120E" android:pathData="M45,28 h18 v2 h-18 z" />
+    <path android:fillColor="#17120E" android:pathData="M48,18 h12 v11 h-12 z" />
+    <path android:fillColor="#E3A64C" android:pathData="M48,24 h12 v2.5 h-12 z" />
+    <!-- shell -->
+    <path android:fillColor="#17120E" android:pathData="M54,58 m-26,0 a26,20 0 1,0 52,0 a26,20 0 1,0 -52,0" />
+    <!-- scute lines on the shell, in brass -->
+    <path android:strokeColor="#E3A64C" android:strokeWidth="2" android:pathData="M54,40 L54,76 M34,50 L40,66 M74,50 L68,66 M30,58 L78,58" />
+</vector>

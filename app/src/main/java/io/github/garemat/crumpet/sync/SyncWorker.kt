@@ -1,0 +1,47 @@
+package io.github.garemat.crumpet.sync
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.health.HealthRepo
+import io.github.garemat.crumpet.net.Net
+import java.util.concurrent.TimeUnit
+
+/** Reads new Health Connect records since the watermark and ships them to the brain.
+ *  Only advances the watermark on a successful POST, so a failure just retries the window. */
+class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        val prefs = Prefs(applicationContext)
+        val (base, token, watermark) = prefs.config()
+        if (base.isBlank() || token.isBlank()) return Result.success() // not paired yet
+
+        val repo = HealthRepo(applicationContext)
+        if (!repo.available || !repo.hasAllPermissions()) return Result.success()
+
+        return try {
+            val started = System.currentTimeMillis()
+            val records = repo.recordsSince(watermark)
+            Net.ingest(base, token, records)
+            prefs.setWatermark(started)
+            Result.success()
+        } catch (_: Exception) {
+            Result.retry()
+        }
+    }
+
+    companion object {
+        private const val NAME = "crumpet-health-sync"
+
+        fun schedule(context: Context) {
+            val req = PeriodicWorkRequestBuilder<SyncWorker>(3, TimeUnit.HOURS)
+                .build()
+            WorkManager.getInstance(context)
+                .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
+        }
+    }
+}
