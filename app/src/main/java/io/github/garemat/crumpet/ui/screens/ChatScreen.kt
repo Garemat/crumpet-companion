@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -98,10 +99,39 @@ fun ChatScreen(vm: AppViewModel) {
             items(chat) { line -> Bubble(line) }
         }
 
+        // A file picked but not yet sent — staged so you can type a question first, then Send.
+        var pending by remember { mutableStateOf<android.net.Uri?>(null) }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
         val picker = androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-        ) { uri ->
-            if (uri != null) { vm.sendAttachment(uri, input); input = "" }
+        ) { uri -> if (uri != null) pending = uri }
+
+        fun send() {
+            val p = pending
+            when {
+                p != null -> { vm.sendAttachment(p, input); pending = null; input = "" }
+                input.isNotBlank() -> { vm.sendChat(input); input = "" }
+            }
+        }
+
+        // Staged-attachment chip (above the input row): shows the file, ✕ to remove.
+        pending?.let { uri ->
+            Row(
+                Modifier
+                    .padding(bottom = 6.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Bg3)
+                    .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Add, null, tint = Jade, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(fileLabel(ctx, uri), color = Cream, fontSize = 12.5.sp)
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = { pending = null }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Filled.Close, "Remove attachment", tint = Muted, modifier = Modifier.size(16.dp))
+                }
+            }
         }
 
         Row(
@@ -111,9 +141,7 @@ fun ChatScreen(vm: AppViewModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(
-                onClick = {
-                    picker.launch(arrayOf("image/*", "application/pdf", "text/*"))
-                },
+                onClick = { picker.launch(arrayOf("image/*", "application/pdf", "text/*")) },
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(15.dp))
@@ -123,7 +151,9 @@ fun ChatScreen(vm: AppViewModel) {
             TextField(
                 value = input,
                 onValueChange = { input = it },
-                placeholder = { Text("Message Crumpet…", color = Muted) },
+                placeholder = {
+                    Text(if (pending != null) "Ask about this…" else "Message Crumpet…", color = Muted)
+                },
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(20.dp)),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Bg3,
@@ -138,7 +168,7 @@ fun ChatScreen(vm: AppViewModel) {
             )
             Spacer(Modifier.width(8.dp))
             IconButton(
-                onClick = { vm.sendChat(input); input = "" },
+                onClick = { send() },
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(15.dp))
@@ -146,6 +176,17 @@ fun ChatScreen(vm: AppViewModel) {
             ) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color(0xFF22170C)) }
         }
     }
+}
+
+private fun fileLabel(ctx: android.content.Context, uri: android.net.Uri): String {
+    var name = "attachment"
+    runCatching {
+        ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (i >= 0 && c.moveToFirst()) c.getString(i)?.let { name = it }
+        }
+    }
+    return if (name.length > 28) name.take(27) + "…" else name
 }
 
 @Composable

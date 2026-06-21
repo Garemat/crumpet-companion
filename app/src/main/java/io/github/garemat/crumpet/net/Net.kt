@@ -9,7 +9,9 @@ import io.github.garemat.crumpet.data.OutMessage
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.forms.MultiPartFormDataContent
@@ -43,6 +45,8 @@ object Net {
         HttpClient(OkHttp) {
             install(ContentNegotiation) { json(json) }
             install(WebSockets)
+            // Per-request timeouts are set where needed; this just enables the plugin.
+            install(HttpTimeout)
         }
     }
 
@@ -63,6 +67,12 @@ object Net {
     ): AttachResult {
         if (base.isBlank()) return AttachResult(false, "Not paired.")
         return client.post("$base/attach") {
+            // Vision can swap the model in + infer — give it room (default read timeout is ~10s).
+            timeout {
+                requestTimeoutMillis = 180_000
+                socketTimeoutMillis = 180_000
+                connectTimeoutMillis = 30_000
+            }
             header("X-Crumpet-Token", token)
             setBody(
                 MultiPartFormDataContent(
