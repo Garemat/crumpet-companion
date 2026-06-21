@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -218,7 +219,23 @@ private fun Bubble(line: ChatLine) {
                 )
                 .padding(horizontal = 14.dp, vertical = 11.dp),
         ) {
-            Text(line.text, color = Cream, fontSize = 13.5.sp)
+            Column {
+                line.imageUri?.let { path ->
+                    coil.compose.AsyncImage(
+                        model = java.io.File(path),
+                        contentDescription = "Sent image",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        modifier = Modifier
+                            .widthIn(max = 220.dp)
+                            .heightIn(max = 260.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                    )
+                    if (line.text.isNotBlank()) Spacer(Modifier.height(8.dp))
+                }
+                if (line.text.isNotBlank()) {
+                    Text(line.text, color = Cream, fontSize = 13.5.sp)
+                }
+            }
         }
     }
 }

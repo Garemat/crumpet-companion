@@ -44,8 +44,19 @@ data class InFrame(
 @Serializable
 data class HistMsg(val role: String, val text: String, val source: String? = null, val ts: String? = null)
 
-/** A chat line in the UI. */
-data class ChatLine(val fromCrumpet: Boolean, val text: String, val source: String? = null)
+/** A chat line in the UI. [imageUri] = a LOCAL file path for an image the user sent (never synced
+ *  from the brain); shown as a thumbnail for human context. */
+data class ChatLine(
+    val fromCrumpet: Boolean,
+    val text: String,
+    val source: String? = null,
+    val imageUri: String? = null,
+)
+
+/** Record of an image the user sent, kept locally so its thumbnail survives history reloads.
+ *  [marker] is exactly the user-text the brain echoes back in history (so we can re-attach). */
+@Serializable
+data class SentImage(val marker: String, val path: String, val ts: Long)
 
 /** Today's health glance for Home/Health screens. */
 data class HealthSnapshot(

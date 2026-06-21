@@ -8,6 +8,7 @@ import io.github.garemat.crumpet.data.ChatLine
 import io.github.garemat.crumpet.data.HealthSnapshot
 import io.github.garemat.crumpet.data.InFrame
 import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.data.SentImage
 import io.github.garemat.crumpet.health.CalendarRepo
 import io.github.garemat.crumpet.health.HealthRepo
 import io.github.garemat.crumpet.net.Net
@@ -123,18 +124,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { Net.send(text) }
     }
 
-    /** Send a picked file (photo / PDF / doc) to /attach with optional caption, and show the reply. */
+    /** Send a picked file (photo / PDF / doc) to /attach with optional caption, and show the reply.
+     *  Images are also copied into app-local storage so their thumbnail shows in chat (never synced
+     *  from the brain). The local copy is keyed by the exact user-text the brain echoes in history,
+     *  so the thumbnail re-attaches after a reconnect/history reload. */
     fun sendAttachment(uri: android.net.Uri, caption: String) = viewModelScope.launch {
         val ctx = getApplication<Application>()
         val resolver = ctx.contentResolver
         val name = queryName(ctx, uri)
         val mime = resolver.getType(uri) ?: "application/octet-stream"
-        _chat.update { it + ChatLine(false, (caption.ifBlank { "Sent" }) + " 📎 $name") }
+        val isImage = mime.startsWith("image/")
+
+        val bytes = withContext(Dispatchers.IO) {
+            runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+        }
+        if (bytes == null) {
+            _chat.update { it + ChatLine(true, "Couldn't read that file, sorry.") }
+            return@launch
+        }
+
+        var localPath: String? = null
+        if (isImage) {
+            localPath = withContext(Dispatchers.IO) { saveLocalImage(ctx, bytes) }
+            // Marker = exactly what the brain logs for this turn, so history reload can re-match.
+            val marker = if (caption.isBlank()) "[+1 image(s)]" else "$caption [+1 image(s)]"
+            localPath?.let { prefs.addSentImage(SentImage(marker, it, System.currentTimeMillis())) }
+        }
+
+        _chat.update {
+            it + ChatLine(
+                fromCrumpet = false,
+                text = if (isImage) caption else (caption.ifBlank { "Sent" }) + " 📎 $name",
+                imageUri = localPath,
+            )
+        }
         _thinking.value = true
         val reply = withContext(Dispatchers.IO) {
             runCatching {
-                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: error("couldn't read the file")
                 val (base, tok, _) = prefs.config()
                 Net.attach(base, tok, caption, name, mime, bytes).reply
             }.getOrElse { e -> "Couldn't send that attachment: ${e.message?.take(80) ?: "error"}" }
@@ -142,6 +168,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _thinking.value = false
         _chat.update { it + ChatLine(true, reply) }
     }
+
+    private fun saveLocalImage(ctx: android.content.Context, bytes: ByteArray): String? = runCatching {
+        val dir = java.io.File(ctx.filesDir, "sent").apply { mkdirs() }
+        val f = java.io.File(dir, "${java.util.UUID.randomUUID()}.img")
+        f.writeBytes(bytes)
+        f.absolutePath
+    }.getOrNull()
 
     private fun queryName(ctx: android.content.Context, uri: android.net.Uri): String {
         var name = "file"
@@ -163,7 +196,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "reply", "push" -> f.text?.let { t -> _chat.update { it + ChatLine(true, t) } }
             "state" -> _thinking.value = f.value == "thinking"
             "history" -> f.messages?.let { hs ->
-                _chat.value = hs.map { ChatLine(it.role == "crumpet", it.text, it.source) }
+                // Re-attach locally-stored image thumbnails to the user's image-send lines (the
+                // brain echoes them as "<caption> [+N image(s)]"). Match each stored image once,
+                // and strip the marker for display so it reads as a clean caption + thumbnail.
+                val sent = prefs.sentImages().toMutableList()
+                _chat.value = hs.map { m ->
+                    val crumpet = m.role == "crumpet"
+                    if (!crumpet && "[+" in m.text && "image(s)]" in m.text) {
+                        val i = sent.indexOfFirst { it.marker == m.text }
+                        if (i >= 0) {
+                            val img = sent.removeAt(i)
+                            val cleaned = m.text.substringBeforeLast(" [+").substringBeforeLast("[+").trim()
+                            return@map ChatLine(false, cleaned, m.source, imageUri = img.path)
+                        }
+                    }
+                    ChatLine(crumpet, m.text, m.source)
+                }
             }
         }
     }
