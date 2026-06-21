@@ -26,6 +26,9 @@ data class IngestBatch(val records: List<HealthRecord>)
 @Serializable
 data class IngestResult(val ok: Boolean = false, val counts: Map<String, Int> = emptyMap())
 
+@Serializable
+data class AttachResult(val ok: Boolean = false, val reply: String = "")
+
 // ---- chat gateway frames (mirror crumpet/gateway/chat_ws.py) ----
 @Serializable
 data class OutMessage(val type: String = "message", val text: String)

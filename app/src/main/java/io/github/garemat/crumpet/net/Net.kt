@@ -1,5 +1,6 @@
 package io.github.garemat.crumpet.net
 
+import io.github.garemat.crumpet.data.AttachResult
 import io.github.garemat.crumpet.data.HealthRecord
 import io.github.garemat.crumpet.data.InFrame
 import io.github.garemat.crumpet.data.IngestBatch
@@ -11,10 +12,14 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.websocket.Frame
@@ -48,6 +53,31 @@ object Net {
             header("X-Crumpet-Token", token)
             contentType(ContentType.Application.Json)
             setBody(IngestBatch(records))
+        }.body()
+    }
+
+    // ---- attachment (photo / PDF / doc) → /attach ----
+    suspend fun attach(
+        base: String, token: String, text: String,
+        fileName: String, mime: String, bytes: ByteArray,
+    ): AttachResult {
+        if (base.isBlank()) return AttachResult(false, "Not paired.")
+        return client.post("$base/attach") {
+            header("X-Crumpet-Token", token)
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        if (text.isNotBlank()) append("text", text)
+                        append(
+                            "file", bytes,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, mime.ifBlank { "application/octet-stream" })
+                                append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                            },
+                        )
+                    },
+                ),
+            )
         }.body()
     }
 

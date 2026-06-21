@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -87,12 +88,28 @@ fun ChatScreen(vm: AppViewModel) {
             items(chat) { line -> Bubble(line) }
         }
 
+        val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri != null) { vm.sendAttachment(uri, input); input = "" }
+        }
+
         Row(
             Modifier
                 .fillMaxWidth()
                 .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(
+                onClick = {
+                    picker.launch(arrayOf("image/*", "application/pdf", "text/*"))
+                },
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(Bg3),
+            ) { Icon(Icons.Filled.Add, "Attach a photo or file", tint = Jade) }
+            Spacer(Modifier.width(8.dp))
             TextField(
                 value = input,
                 onValueChange = { input = it },

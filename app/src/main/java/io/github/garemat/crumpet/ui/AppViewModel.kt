@@ -123,6 +123,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { Net.send(text) }
     }
 
+    /** Send a picked file (photo / PDF / doc) to /attach with optional caption, and show the reply. */
+    fun sendAttachment(uri: android.net.Uri, caption: String) = viewModelScope.launch {
+        val ctx = getApplication<Application>()
+        val resolver = ctx.contentResolver
+        val name = queryName(ctx, uri)
+        val mime = resolver.getType(uri) ?: "application/octet-stream"
+        _chat.update { it + ChatLine(false, (caption.ifBlank { "Sent" }) + " 📎 $name") }
+        _thinking.value = true
+        val reply = withContext(Dispatchers.IO) {
+            runCatching {
+                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: error("couldn't read the file")
+                val (base, tok, _) = prefs.config()
+                Net.attach(base, tok, caption, name, mime, bytes).reply
+            }.getOrElse { e -> "Couldn't send that attachment: ${e.message?.take(80) ?: "error"}" }
+        }
+        _thinking.value = false
+        _chat.update { it + ChatLine(true, reply) }
+    }
+
+    private fun queryName(ctx: android.content.Context, uri: android.net.Uri): String {
+        var name = "file"
+        runCatching {
+            ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (i >= 0 && c.moveToFirst()) c.getString(i)?.let { name = it }
+            }
+        }
+        return name
+    }
+
     fun savePairing(url: String, tokenValue: String) = viewModelScope.launch {
         prefs.setPairing(url, tokenValue)
     }
