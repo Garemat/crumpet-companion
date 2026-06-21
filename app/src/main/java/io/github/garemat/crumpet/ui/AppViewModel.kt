@@ -47,6 +47,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _syncMsg = MutableStateFlow<String?>(null)
     val syncMsg = _syncMsg.asStateFlow()
 
+    // Proactive pushes shown but not yet marked read (read = user saw them in chat → dismiss elsewhere).
+    private val pendingReads = mutableSetOf<Int>()
+    private var chatActive = false
+
     // self-update
     val ghToken: StateFlow<String> = prefs.ghToken.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     private val _update = MutableStateFlow<Updater.Available?>(null)
@@ -191,9 +195,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.setPairing(url, tokenValue)
     }
 
+    /** Chat screen visibility — when visible, proactive pushes are immediately "read". */
+    fun setChatActive(active: Boolean) {
+        chatActive = active
+        if (active) flushReads()
+    }
+
+    private fun flushReads() {
+        if (pendingReads.isEmpty()) return
+        val nm = androidx.core.app.NotificationManagerCompat.from(getApplication())
+        pendingReads.forEach { id -> Net.read(id); nm.cancel(id) }  // dismiss elsewhere + locally
+        pendingReads.clear()
+    }
+
     private suspend fun handleFrame(f: InFrame) {
         when (f.type) {
-            "reply", "push" -> f.text?.let { t -> _chat.update { it + ChatLine(true, t) } }
+            "reply" -> f.text?.let { t -> _chat.update { it + ChatLine(true, t) } }
+            "push" -> f.text?.let { t ->
+                _chat.update { it + ChatLine(true, t) }
+                f.id?.let { id -> if (chatActive) { Net.read(id) } else pendingReads.add(id) }
+            }
             "state" -> _thinking.value = f.value == "thinking"
             "history" -> f.messages?.let { hs ->
                 // Re-attach locally-stored image thumbnails to the user's image-send lines (the

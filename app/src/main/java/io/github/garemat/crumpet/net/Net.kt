@@ -104,6 +104,13 @@ object Net {
         if (text.isNotBlank()) outbox.send(json.encodeToString(OutMessage(text = text)))
     }
 
+    /** Tell the brain this device received a proactive push (stop redelivering it).
+     *  Non-blocking: if offline the brain re-flushes pending on reconnect anyway. */
+    fun ack(id: Int) { outbox.trySend("""{"type":"ack","id":$id}""") }
+
+    /** Tell the brain the user has seen a proactive push (dismiss it on other devices). */
+    fun read(id: Int) { outbox.trySend("""{"type":"read","id":$id}""") }
+
     /** Maintain the WS with reconnect-on-drop until the calling scope is cancelled. */
     suspend fun maintain(base: String, token: String) {
         if (base.isBlank() || token.isBlank()) {

@@ -47,8 +47,14 @@ class PresenceService : Service() {
             val (base, token, _) = Prefs(applicationContext).config()
             launch { Net.maintain(base, token) }
             Net.frames.collect { frame ->
-                if (frame.type == "push" && !frame.text.isNullOrBlank()) {
-                    postPush(frame.text)
+                when {
+                    frame.type == "push" && !frame.text.isNullOrBlank() -> {
+                        frame.id?.let { Net.ack(it) }                 // confirm receipt
+                        postPush(frame.id ?: frame.text.hashCode(), frame.text)
+                    }
+                    frame.type == "dismiss" -> frame.id?.let {        // read elsewhere → cancel here
+                        NotificationManagerCompat.from(this@PresenceService).cancel(it)
+                    }
                 }
             }
         }
@@ -71,7 +77,7 @@ class PresenceService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
-    private fun postPush(text: String) {
+    private fun postPush(notifId: Int, text: String) {
         if (NotificationManagerCompat.from(this).areNotificationsEnabled()) {
             val n = NotificationCompat.Builder(this, PUSH_CHANNEL)
                 .setContentTitle("Crumpet")
@@ -82,7 +88,7 @@ class PresenceService : Service() {
                 .setContentIntent(openApp())
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .build()
-            NotificationManagerCompat.from(this).notify(System.currentTimeMillis().toInt(), n)
+            NotificationManagerCompat.from(this).notify(notifId, n)
         }
     }
 

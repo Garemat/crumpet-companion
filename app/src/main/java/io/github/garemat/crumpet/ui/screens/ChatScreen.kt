@@ -63,6 +63,12 @@ fun ChatScreen(vm: AppViewModel) {
     val listState = rememberLazyListState()
     var didInitialScroll by remember { mutableStateOf(false) }
 
+    // Mark proactive pushes read while the chat is on screen (dismisses them on other devices).
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        vm.setChatActive(true)
+        onDispose { vm.setChatActive(false) }
+    }
+
     LaunchedEffect(chat.size) {
         if (chat.isEmpty()) return@LaunchedEffect
         if (!didInitialScroll) {

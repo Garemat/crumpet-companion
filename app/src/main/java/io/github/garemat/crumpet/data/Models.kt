@@ -38,6 +38,7 @@ data class InFrame(
     val type: String,
     val text: String? = null,
     val value: String? = null,
+    val id: Int? = null,                       // proactive push / dismiss id
     val messages: List<HistMsg>? = null,
 )
 
