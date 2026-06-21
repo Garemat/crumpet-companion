@@ -29,6 +29,11 @@ class PresenceService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // The single connection + notification loop. start() can be called many times (pairing
+    // changes, START_STICKY redelivery); without this guard each call stacked another WS
+    // connection AND another frame collector → duplicate push notifications.
+    private var connectionJob: kotlinx.coroutines.Job? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -37,7 +42,8 @@ class PresenceService : Service() {
             this, ONGOING_ID, ongoingNotification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
-        scope.launch {
+        connectionJob?.cancel()  // tear down any prior loop/collector → exactly one connection
+        connectionJob = scope.launch {
             val (base, token, _) = Prefs(applicationContext).config()
             launch { Net.maintain(base, token) }
             Net.frames.collect { frame ->
