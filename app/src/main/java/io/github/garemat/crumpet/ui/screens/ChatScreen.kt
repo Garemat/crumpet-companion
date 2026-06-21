@@ -59,9 +59,19 @@ fun ChatScreen(vm: AppViewModel) {
     val connected by vm.connected.collectAsStateWithLifecycle()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var didInitialScroll by remember { mutableStateOf(false) }
 
     LaunchedEffect(chat.size) {
-        if (chat.isNotEmpty()) listState.animateScrollToItem(chat.size - 1)
+        if (chat.isEmpty()) return@LaunchedEffect
+        if (!didInitialScroll) {
+            // First load (history just arrived): jump straight to the bottom — no slow
+            // top-to-bottom animation through a long history.
+            listState.scrollToItem(chat.size - 1)
+            didInitialScroll = true
+        } else {
+            // New message during the session: a gentle animated scroll is nice here.
+            listState.animateScrollToItem(chat.size - 1)
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
