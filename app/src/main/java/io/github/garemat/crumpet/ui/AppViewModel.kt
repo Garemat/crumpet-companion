@@ -8,6 +8,7 @@ import io.github.garemat.crumpet.data.ChatLine
 import io.github.garemat.crumpet.data.HealthSnapshot
 import io.github.garemat.crumpet.data.InFrame
 import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.data.QueuedMsg
 import io.github.garemat.crumpet.data.SentImage
 import io.github.garemat.crumpet.health.CalendarRepo
 import io.github.garemat.crumpet.health.HealthRepo
@@ -67,8 +68,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { Net.frames.collect(::handleFrame) }
+        viewModelScope.launch { Net.sent.collect(::markDelivered) }
+        viewModelScope.launch { loadChatCache() }
         refresh()
         checkForUpdate()
+    }
+
+    /** Show the cached conversation immediately (offline-friendly open); the live `history`
+     *  frame replaces it when the WS connects. Pending flags are reconciled against the real
+     *  outbox — a line whose outbox entry is gone was delivered while this ViewModel was away. */
+    private suspend fun loadChatCache() {
+        val cached = prefs.chatCache()
+        if (cached.isEmpty() || _chat.value.isNotEmpty()) return
+        val stillQueued = prefs.outbox().map { it.id }.toSet()
+        val reconciled = cached.map { line ->
+            if (line.pending && line.id !in stillQueued) line.copy(pending = false) else line
+        }
+        // Don't clobber a history frame that raced us while we were reading the cache.
+        if (_chat.value.isEmpty()) _chat.value = reconciled
+    }
+
+    /** Update the chat state AND persist it, so the conversation survives brain/VPN downtime. */
+    private fun updateChat(transform: (List<ChatLine>) -> List<ChatLine>) {
+        _chat.update(transform)
+        val snapshot = _chat.value
+        viewModelScope.launch { prefs.setChatCache(snapshot) }
+    }
+
+    /** An outbox entry was written to the live socket — clear its bubble's pending mark. */
+    private fun markDelivered(id: Long) {
+        updateChat { lines -> lines.map { if (it.id == id) it.copy(pending = false) else it } }
     }
 
     fun checkForUpdate() = viewModelScope.launch {
@@ -124,8 +153,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun sendChat(text: String) {
         if (text.isBlank()) return
-        _chat.update { it + ChatLine(fromCrumpet = false, text = text) }
-        viewModelScope.launch { Net.send(text) }
+        val id = System.currentTimeMillis()
+        updateChat { it + ChatLine(fromCrumpet = false, text = text, id = id, pending = true) }
+        viewModelScope.launch {
+            prefs.addToOutbox(QueuedMsg(id, text, id))  // persist FIRST …
+            Net.notifyQueued()                          // … then wake the sender
+        }
     }
 
     /** Send a picked file (photo / PDF / doc) to /attach with optional caption, and show the reply.
@@ -143,7 +176,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
         }
         if (bytes == null) {
-            _chat.update { it + ChatLine(true, "Couldn't read that file, sorry.") }
+            updateChat { it + ChatLine(true, "Couldn't read that file, sorry.") }
             return@launch
         }
 
@@ -155,7 +188,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             localPath?.let { prefs.addSentImage(SentImage(marker, it, System.currentTimeMillis())) }
         }
 
-        _chat.update {
+        updateChat {
             it + ChatLine(
                 fromCrumpet = false,
                 text = if (isImage) caption else (caption.ifBlank { "Sent" }) + " 📎 $name",
@@ -170,7 +203,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }.getOrElse { e -> "Couldn't send that attachment: ${e.message?.take(80) ?: "error"}" }
         }
         _thinking.value = false
-        _chat.update { it + ChatLine(true, reply) }
+        updateChat { it + ChatLine(true, reply) }
     }
 
     private fun saveLocalImage(ctx: android.content.Context, bytes: ByteArray): String? = runCatching {
@@ -210,9 +243,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun handleFrame(f: InFrame) {
         when (f.type) {
-            "reply" -> f.text?.let { t -> _chat.update { it + ChatLine(true, t) } }
+            "reply" -> f.text?.let { t -> updateChat { it + ChatLine(true, t) } }
             "push" -> f.text?.let { t ->
-                _chat.update { it + ChatLine(true, t) }
+                updateChat { it + ChatLine(true, t) }
                 f.id?.let { id -> if (chatActive) { Net.read(id) } else pendingReads.add(id) }
             }
             "state" -> _thinking.value = f.value == "thinking"
@@ -221,7 +254,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // brain echoes them as "<caption> [+N image(s)]"). Match each stored image once,
                 // and strip the marker for display so it reads as a clean caption + thumbnail.
                 val sent = prefs.sentImages().toMutableList()
-                _chat.value = hs.map { m ->
+                val fromServer = hs.map { m ->
                     val crumpet = m.role == "crumpet"
                     if (!crumpet && "[+" in m.text && "image(s)]" in m.text) {
                         val i = sent.indexOfFirst { it.marker == m.text }
@@ -233,6 +266,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     ChatLine(crumpet, m.text, m.source)
                 }
+                // Server history is the truth, but it can't know about messages still queued in
+                // the outbox — keep those visible (pending) at the tail instead of dropping them.
+                val stillQueued = prefs.outbox().map { it.id }.toSet()
+                val queuedLines = _chat.value.filter { it.pending && it.id in stillQueued }
+                updateChat { fromServer + queuedLines }
             }
         }
     }

@@ -3,6 +3,8 @@ package io.github.garemat.crumpet.sync
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -35,12 +37,24 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
 
     companion object {
         private const val NAME = "crumpet-health-sync"
+        private const val ONCE = "crumpet-health-sync-once"
+        private const val MIN_GAP_MS = 15 * 60 * 1000L  // reconnect-triggered syncs, throttled
 
         fun schedule(context: Context) {
             val req = PeriodicWorkRequestBuilder<SyncWorker>(3, TimeUnit.HOURS)
                 .build()
             WorkManager.getInstance(context)
                 .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
+        }
+
+        /** One-shot sync on reconnect, so data lands right after downtime instead of waiting
+         *  for the 3h timer. Throttled via the watermark so a flappy VPN doesn't spam syncs. */
+        suspend fun syncOnce(context: Context) {
+            val (_, _, watermark) = Prefs(context).config()
+            if (System.currentTimeMillis() - watermark < MIN_GAP_MS) return
+            val req = OneTimeWorkRequestBuilder<SyncWorker>().build()
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(ONCE, ExistingWorkPolicy.KEEP, req)
         }
     }
 }
