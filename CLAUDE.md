@@ -11,8 +11,14 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
 
 ## Architecture / conventions
 - Kotlin + Jetpack Compose (Material 3), single-Activity, Navigation-Compose bottom bar.
-- **No Room** — state is DataStore (`data/Prefs.kt`: server URL, token, sync watermark). Health Connect
+- **No Room** — state is DataStore (`data/Prefs.kt`: server URL, token, sync watermark, plus the
+  offline-resilience state: a ~100-line chat cache and the persisted message outbox). Health Connect
   is the source of truth; on sync failure we just don't advance the watermark and retry.
+- **Offline posture:** the brain is *usually* reachable but the tunnel isn't guaranteed — chat renders
+  from the local cache when offline, sent messages queue in the persisted outbox (pending mark in the
+  UI) and drain in order on reconnect, the WS reconnect backs off 4s→5min (a network callback snaps it
+  back), and a reconnect kicks a throttled one-shot health sync. Intelligence stays on the brain — the
+  app never aggregates/analyses beyond the per-day sums it ships to `/health/ingest`.
 - All brain I/O goes through `net/Net.kt` (one Ktor client; ingest POST + the reconnecting chat WS).
 - Auth = a per-device token in the brain's `CHAT_WS_TOKENS` (same model as the web face). The phone holds
   only that token + the URL — no brain secrets.

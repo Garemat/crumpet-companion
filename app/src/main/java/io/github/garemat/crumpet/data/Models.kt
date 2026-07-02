@@ -46,13 +46,22 @@ data class InFrame(
 data class HistMsg(val role: String, val text: String, val source: String? = null, val ts: String? = null)
 
 /** A chat line in the UI. [imageUri] = a LOCAL file path for an image the user sent (never synced
- *  from the brain); shown as a thumbnail for human context. */
+ *  from the brain); shown as a thumbnail for human context. Serializable because the last ~100
+ *  lines are cached locally so the chat isn't blank when the brain/VPN is unreachable.
+ *  [pending] = queued in the outbox, not yet delivered; [id] links the line to its outbox entry. */
+@Serializable
 data class ChatLine(
     val fromCrumpet: Boolean,
     val text: String,
     val source: String? = null,
     val imageUri: String? = null,
+    val id: Long = 0L,
+    val pending: Boolean = false,
 )
+
+/** A user message queued for delivery (persisted outbox — survives restarts and offline gaps). */
+@Serializable
+data class QueuedMsg(val id: Long, val text: String, val ts: Long)
 
 /** Record of an image the user sent, kept locally so its thumbnail survives history reloads.
  *  [marker] is exactly the user-text the brain echoes back in history (so we can re-attach). */

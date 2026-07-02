@@ -19,6 +19,8 @@ class Prefs(private val context: Context) {
     private val GH_TOKEN = stringPreferencesKey("gh_token")  // optional, for self-update on a private repo
     private val WATERMARK = longPreferencesKey("sync_watermark")  // epoch millis; read HC since this
     private val SENT_IMAGES = stringPreferencesKey("sent_images")  // JSON list of SentImage (local only)
+    private val CHAT_CACHE = stringPreferencesKey("chat_cache")    // JSON list of ChatLine (offline view)
+    private val OUTBOX = stringPreferencesKey("chat_outbox")       // JSON list of QueuedMsg (undelivered)
     private val json = Json { ignoreUnknownKeys = true }
 
     val serverUrl: Flow<String> = context.dataStore.data.map { it[URL] ?: "" }
@@ -53,5 +55,41 @@ class Prefs(private val context: Context) {
     suspend fun addSentImage(img: SentImage) {
         val list = (sentImages() + img).takeLast(200)  // cap so it can't grow forever
         context.dataStore.edit { it[SENT_IMAGES] = json.encodeToString(list) }
+    }
+
+    // --- chat cache: the last ~100 lines, so opening the app offline shows the conversation ---
+    suspend fun chatCache(): List<ChatLine> {
+        val raw = context.dataStore.data.first()[CHAT_CACHE] ?: return emptyList()
+        return runCatching { json.decodeFromString<List<ChatLine>>(raw) }.getOrDefault(emptyList())
+    }
+
+    suspend fun setChatCache(lines: List<ChatLine>) {
+        context.dataStore.edit { it[CHAT_CACHE] = json.encodeToString(lines.takeLast(100)) }
+    }
+
+    // --- persisted outbox: user messages not yet delivered to the brain. Mutations happen
+    // inside a single edit{} (read-modify-write on the snapshot) so a concurrent add from the
+    // ViewModel and remove from the WS drain can't lose each other's update. ---
+    suspend fun outbox(): List<QueuedMsg> {
+        val raw = context.dataStore.data.first()[OUTBOX] ?: return emptyList()
+        return runCatching { json.decodeFromString<List<QueuedMsg>>(raw) }.getOrDefault(emptyList())
+    }
+
+    suspend fun addToOutbox(msg: QueuedMsg) {
+        context.dataStore.edit { p ->
+            val cur = p[OUTBOX]?.let {
+                runCatching { json.decodeFromString<List<QueuedMsg>>(it) }.getOrDefault(emptyList())
+            } ?: emptyList()
+            p[OUTBOX] = json.encodeToString((cur + msg).takeLast(50))
+        }
+    }
+
+    suspend fun removeFromOutbox(id: Long) {
+        context.dataStore.edit { p ->
+            val cur = p[OUTBOX]?.let {
+                runCatching { json.decodeFromString<List<QueuedMsg>>(it) }.getOrDefault(emptyList())
+            } ?: emptyList()
+            p[OUTBOX] = json.encodeToString(cur.filterNot { it.id == id })
+        }
     }
 }

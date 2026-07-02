@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -17,6 +19,7 @@ import io.github.garemat.crumpet.MainActivity
 import io.github.garemat.crumpet.R
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.net.Net
+import io.github.garemat.crumpet.sync.SyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +37,13 @@ class PresenceService : Service() {
     // connection AND another frame collector → duplicate push notifications.
     private var connectionJob: kotlinx.coroutines.Job? = null
 
+    // Collapse the reconnect backoff the moment Android says connectivity (e.g. the VPN) is back,
+    // instead of waiting out a multi-minute backoff window.
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) { Net.retryNow() }
+    }
+    private var callbackRegistered = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -42,10 +52,27 @@ class PresenceService : Service() {
             this, ONGOING_ID, ongoingNotification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
+        if (!callbackRegistered) {
+            runCatching {
+                getSystemService(ConnectivityManager::class.java)
+                    .registerDefaultNetworkCallback(networkCallback)
+                callbackRegistered = true
+            }
+        }
         connectionJob?.cancel()  // tear down any prior loop/collector → exactly one connection
         connectionJob = scope.launch {
-            val (base, token, _) = Prefs(applicationContext).config()
-            launch { Net.maintain(base, token) }
+            val prefs = Prefs(applicationContext)
+            val (base, token, _) = prefs.config()
+            launch { Net.maintain(base, token, prefs) }
+            launch {
+                // On each reconnect, kick a health sync (throttled inside syncOnce) rather than
+                // waiting up to 3h for the periodic worker — data lands right after downtime.
+                var wasConnected = false
+                Net.connected.collect { now ->
+                    if (now && !wasConnected) SyncWorker.syncOnce(applicationContext)
+                    wasConnected = now
+                }
+            }
             Net.frames.collect { frame ->
                 when {
                     frame.type == "push" && !frame.text.isNullOrBlank() -> {
@@ -62,6 +89,13 @@ class PresenceService : Service() {
     }
 
     override fun onDestroy() {
+        if (callbackRegistered) {
+            runCatching {
+                getSystemService(ConnectivityManager::class.java)
+                    .unregisterNetworkCallback(networkCallback)
+            }
+            callbackRegistered = false
+        }
         scope.cancel()
         super.onDestroy()
     }

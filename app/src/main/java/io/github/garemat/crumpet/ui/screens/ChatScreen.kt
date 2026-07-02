@@ -92,7 +92,12 @@ fun ChatScreen(vm: AppViewModel) {
             Column {
                 Text("Crumpet", style = MaterialTheme.typography.titleLarge, color = Cream)
                 Text(
-                    if (thinking) "thinking…" else if (connected) "connected" else "offline",
+                    when {
+                        thinking -> "thinking…"
+                        connected -> "connected"
+                        chat.isNotEmpty() -> "offline — showing recent history"
+                        else -> "offline"
+                    },
                     color = if (connected) Jade else Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -240,6 +245,13 @@ private fun Bubble(line: ChatLine) {
                 }
                 if (line.text.isNotBlank()) {
                     Text(line.text, color = Cream, fontSize = 13.5.sp)
+                }
+                if (line.pending) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "queued — sends when connected",
+                        color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }
