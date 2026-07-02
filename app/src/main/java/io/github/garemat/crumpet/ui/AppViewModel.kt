@@ -133,16 +133,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             when {
                 base.isBlank() || tok.isBlank() -> "Not paired — set the brain URL + token in Connect first."
                 !health.available -> "Health Connect isn't available on this device."
-                !health.hasAllPermissions() -> "Health Connect permissions aren't all granted — tap Grant above."
+                !health.hasAnyPermission() -> "No Health Connect permissions granted — tap Grant above."
                 else -> runCatching {
+                    // Per-type sync: run with what's granted, and NAME what isn't — a missing
+                    // grant should be visible here, not a silent gap in the data.
+                    val missing = health.missingTypes()
+                    val note = if (missing.isEmpty()) ""
+                               else " Not synced (permission off): ${missing.joinToString(", ")} — tap Grant above."
                     val records = health.recentRecords(30)
                     if (records.isEmpty())
-                        "Read 0 records from Health Connect — nothing's being written there yet (check the source apps, e.g. MyFitnessPal → Health Connect)."
+                        "Read 0 records from Health Connect — nothing's being written there yet (check the source apps, e.g. MyFitnessPal → Health Connect).$note"
                     else {
                         val c = Net.ingest(base, tok, records).counts
                         val parts = listOf("nutrition", "weight", "steps", "sleep", "workouts")
                             .mapNotNull { k -> c[k]?.takeIf { it > 0 }?.let { "$it $k" } }
-                        "Synced ${records.size} record(s)" + if (parts.isEmpty()) " (all up to date)." else ": ${parts.joinToString(", ")}."
+                        "Synced ${records.size} record(s)" +
+                            (if (parts.isEmpty()) " (all up to date)." else ": ${parts.joinToString(", ")}.") + note
                     }
                 }.getOrElse { e -> "Sync failed: ${e.message?.take(90) ?: "unknown error"}" }
             }
