@@ -23,7 +23,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         if (base.isBlank() || token.isBlank()) return Result.success() // not paired yet
 
         val repo = HealthRepo(applicationContext)
-        if (!repo.available || !repo.hasAllPermissions()) return Result.success()
+        // Per-type sync: one missing grant must never silently stop the WHOLE sync — run with
+        // whatever is granted; ungranted types are skipped inside recentRecords().
+        if (!repo.available || !repo.hasAnyPermission()) return Result.success()
 
         return try {
             // Rolling window + idempotent brain → no watermark gymnastics, nothing missed.
