@@ -47,6 +47,14 @@ object Net {
 
     val client: HttpClient by lazy {
         HttpClient(OkHttp) {
+            engine {
+                // Client-side WS pings: without these a dead tunnel is a ZOMBIE — the socket
+                // looks connected forever, nothing arrives, and only an app restart recovers
+                // (seen 2026-07-03: a reply finished mid-build and never landed). OkHttp kills
+                // the connection when a ping goes unanswered → onClose → the reconnect loop
+                // takes over and the history sync delivers whatever we missed.
+                config { pingInterval(java.time.Duration.ofSeconds(20)) }
+            }
             install(ContentNegotiation) { json(json) }
             install(WebSockets)
             // Per-request timeouts are set where needed; this just enables the plugin.
