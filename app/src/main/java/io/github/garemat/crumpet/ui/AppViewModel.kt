@@ -266,6 +266,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             "state" -> _thinking.value = f.value == "thinking"
             "activity" -> _activity.value = f.text?.takeIf { it.isNotBlank() }  // null/blank clears
+            // A turn finished on ANOTHER channel (Discord/voice/another device) — append it live
+            // so the one thread stays current without waiting for a reconnect's history sync.
+            // (The brain never sends us our own turns: the asker only gets `reply`.)
+            "exchange" -> updateChat { lines ->
+                var out = lines
+                f.user?.takeIf { it.isNotBlank() }?.let { out = out + ChatLine(false, it, f.source) }
+                f.reply?.takeIf { it.isNotBlank() }?.let { out = out + ChatLine(true, it, f.source) }
+                out
+            }
             "history" -> f.messages?.let { hs ->
                 // Re-attach locally-stored image thumbnails to the user's image-send lines (the
                 // brain echoes them as "<caption> [+N image(s)]"). Match each stored image once,

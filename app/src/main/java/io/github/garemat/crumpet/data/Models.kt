@@ -41,6 +41,9 @@ data class InFrame(
     val id: Int? = null,                       // proactive push / dismiss id
     val messages: List<HistMsg>? = null,
     val phase: String? = null,                 // activity milestone phase (plan/build/review/pr/…)
+    val source: String? = null,                // exchange: originating channel (discord/voice:…/app)
+    val user: String? = null,                  // exchange: the user side of the completed turn
+    val reply: String? = null,                 // exchange: Crumpet's side of the completed turn
 )
 
 @Serializable

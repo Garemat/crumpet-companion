@@ -254,6 +254,15 @@ private fun Bubble(line: ChatLine) {
                 if (line.text.isNotBlank()) {
                     Text(line.text, color = Cream, fontSize = 13.5.sp)
                 }
+                // Light source label on the user's lines from OTHER channels ("via discord",
+                // "via voice:desk") — the one thread shows where each turn happened.
+                if (!line.fromCrumpet && line.source != null && line.source != "app") {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "via ${line.source}",
+                        color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 if (line.pending) {
                     Spacer(Modifier.height(4.dp))
                     Text(
