@@ -34,7 +34,9 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
 
 ## Contract with the brain (don't drift)
 - Ingest record shapes must match `crumpet/core/health_ingest.py` (`data/Models.kt: HealthRecord`).
-- Chat WS frames match `crumpet/gateway/chat_ws.py` (`message` out; `reply`/`state`/`history`/`push` in).
+- Chat WS frames match `crumpet/gateway/chat_ws.py` (`message` out; `reply`/`state`/`history`/`push`/
+  `activity` in — `activity` is the "currently working on X" banner: curated text + phase, `text: null`
+  clears, the live frame is replayed on connect; we also clear it locally on disconnect).
 - Design + rationale: `docs/backlog/phone-companion.md` in the Crumpet repo.
 
 ## Status

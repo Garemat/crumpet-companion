@@ -58,6 +58,7 @@ import io.github.garemat.crumpet.ui.theme.Muted
 fun ChatScreen(vm: AppViewModel) {
     val chat by vm.chat.collectAsStateWithLifecycle()
     val thinking by vm.thinking.collectAsStateWithLifecycle()
+    val activity by vm.activity.collectAsStateWithLifecycle()
     val connected by vm.connected.collectAsStateWithLifecycle()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -87,18 +88,25 @@ fun ChatScreen(vm: AppViewModel) {
             Modifier.fillMaxWidth().padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CrumpetAvatar(Modifier.size(40.dp), active = thinking)
+            CrumpetAvatar(Modifier.size(40.dp), active = thinking || activity != null)
             Spacer(Modifier.width(11.dp))
             Column {
                 Text("Crumpet", style = MaterialTheme.typography.titleLarge, color = Cream)
                 Text(
                     when {
+                        // A live milestone outranks the generic spinner — it's why the turn is long.
+                        activity != null -> "⚙ $activity"
                         thinking -> "thinking…"
                         connected -> "connected"
                         chat.isNotEmpty() -> "offline — showing recent history"
                         else -> "offline"
                     },
-                    color = if (connected) Jade else Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        activity != null -> Brass
+                        connected -> Jade
+                        else -> Muted
+                    },
+                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                 )
             }
         }

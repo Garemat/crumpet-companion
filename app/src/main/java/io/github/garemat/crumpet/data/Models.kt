@@ -40,6 +40,7 @@ data class InFrame(
     val value: String? = null,
     val id: Int? = null,                       // proactive push / dismiss id
     val messages: List<HistMsg>? = null,
+    val phase: String? = null,                 // activity milestone phase (plan/build/review/pr/…)
 )
 
 @Serializable
