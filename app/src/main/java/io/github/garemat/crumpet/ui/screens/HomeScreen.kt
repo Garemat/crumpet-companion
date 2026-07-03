@@ -44,6 +44,7 @@ fun HomeScreen(vm: AppViewModel, onChat: () -> Unit) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val agenda by vm.agenda.collectAsStateWithLifecycle()
     val chat by vm.chat.collectAsStateWithLifecycle()
+    val activity by vm.activity.collectAsStateWithLifecycle()
 
     val greeting = when (LocalTime.now().hour) {
         in 5..11 -> "Morning"
@@ -60,11 +61,27 @@ fun HomeScreen(vm: AppViewModel, onChat: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CrumpetAvatar(Modifier.size(46.dp))
+            CrumpetAvatar(Modifier.size(46.dp), active = activity != null)
             Spacer(Modifier.width(13.dp))
             Column {
                 Text("$greeting.", style = MaterialTheme.typography.headlineMedium, color = Cream)
                 Text(LocalDate.now().toString(), color = Muted, fontSize = 12.sp)
+            }
+        }
+
+        // Live "currently working on X" strip — visible even when the long turn was started
+        // from another body (Discord/voice); tap through to chat to watch it land.
+        activity?.let { act ->
+            Spacer(Modifier.height(14.dp))
+            SoftCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⚙", color = Brass, fontSize = 16.sp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Currently", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Text(act, color = Brass, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
             }
         }
 

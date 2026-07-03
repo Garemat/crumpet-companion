@@ -45,6 +45,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val chat = _chat.asStateFlow()
     private val _thinking = MutableStateFlow(false)
     val thinking = _thinking.asStateFlow()
+    // "Currently working on X" — curated milestones from the brain during long turns (sandbox
+    // builds etc.). Broadcast to ALL clients, so it shows even for turns started on Discord/voice
+    // — independent of [thinking], which only tracks THIS device's own in-flight message.
+    private val _activity = MutableStateFlow<String?>(null)
+    val activity = _activity.asStateFlow()
     private val _syncMsg = MutableStateFlow<String?>(null)
     val syncMsg = _syncMsg.asStateFlow()
 
@@ -69,6 +74,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch { Net.frames.collect(::handleFrame) }
         viewModelScope.launch { Net.sent.collect(::markDelivered) }
+        viewModelScope.launch {
+            // If the WS drops mid-task we may miss the clear frame; the brain replays the LIVE
+            // banner on reconnect but never re-sends a clear — so drop it ourselves on disconnect.
+            Net.connected.collect { up -> if (!up) _activity.value = null }
+        }
         viewModelScope.launch { loadChatCache() }
         refresh()
         checkForUpdate()
@@ -255,6 +265,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 f.id?.let { id -> if (chatActive) { Net.read(id) } else pendingReads.add(id) }
             }
             "state" -> _thinking.value = f.value == "thinking"
+            "activity" -> _activity.value = f.text?.takeIf { it.isNotBlank() }  // null/blank clears
             "history" -> f.messages?.let { hs ->
                 // Re-attach locally-stored image thumbnails to the user's image-send lines (the
                 // brain echoes them as "<caption> [+N image(s)]"). Match each stored image once,
