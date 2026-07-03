@@ -35,8 +35,10 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
 ## Contract with the brain (don't drift)
 - Ingest record shapes must match `crumpet/core/health_ingest.py` (`data/Models.kt: HealthRecord`).
 - Chat WS frames match `crumpet/gateway/chat_ws.py` (`message` out; `reply`/`state`/`history`/`push`/
-  `activity` in — `activity` is the "currently working on X" banner: curated text + phase, `text: null`
-  clears, the live frame is replayed on connect; we also clear it locally on disconnect).
+  `activity`/`exchange` in — `activity` is the "currently working on X" banner: curated text + phase,
+  `text: null` clears, the live frame is replayed on connect; we also clear it locally on disconnect.
+  `exchange` is a turn that completed on ANOTHER channel ({source,user,reply}) — append it to the
+  thread live; the brain never sends us our own turns, so no dedupe is needed).
 - Design + rationale: `docs/backlog/phone-companion.md` in the Crumpet repo.
 
 ## Status
