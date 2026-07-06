@@ -19,6 +19,7 @@ class Prefs(private val context: Context) {
     private val GH_TOKEN = stringPreferencesKey("gh_token")  // optional, for self-update on a private repo
     private val WATERMARK = longPreferencesKey("sync_watermark")  // epoch millis; read HC since this
     private val SENT_IMAGES = stringPreferencesKey("sent_images")  // JSON list of SentImage (local only)
+    private val INBOX_FILES = stringPreferencesKey("inbox_files")  // JSON list of InboxFile (received files)
     private val CHAT_CACHE = stringPreferencesKey("chat_cache")    // JSON list of ChatLine (offline view)
     private val OUTBOX = stringPreferencesKey("chat_outbox")       // JSON list of QueuedMsg (undelivered)
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,6 +56,19 @@ class Prefs(private val context: Context) {
     suspend fun addSentImage(img: SentImage) {
         val list = (sentImages() + img).takeLast(200)  // cap so it can't grow forever
         context.dataStore.edit { it[SENT_IMAGES] = json.encodeToString(list) }
+    }
+
+    // --- received files (charts/photos Crumpet sent) — app-local like sent images ---
+    suspend fun inboxFiles(): List<InboxFile> {
+        val raw = context.dataStore.data.first()[INBOX_FILES] ?: return emptyList()
+        return runCatching { json.decodeFromString<List<InboxFile>>(raw) }.getOrDefault(emptyList())
+    }
+
+    suspend fun addInboxFile(file: InboxFile) {
+        val all = inboxFiles() + file
+        val keep = all.takeLast(60)  // cap; evicted entries also lose their local bytes
+        (all - keep.toSet()).forEach { runCatching { java.io.File(it.path).delete() } }
+        context.dataStore.edit { it[INBOX_FILES] = json.encodeToString(keep) }
     }
 
     // --- chat cache: the last ~100 lines, so opening the app offline shows the conversation ---
