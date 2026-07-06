@@ -2,6 +2,7 @@ package io.github.garemat.crumpet.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,7 +117,7 @@ fun ChatScreen(vm: AppViewModel) {
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(chat) { line -> Bubble(line) }
+            items(chat) { line -> Bubble(line, onFileTap = vm::saveToDownloads) }
         }
 
         // A file picked but not yet sent — staged so you can type a question first, then Send.
@@ -210,7 +211,7 @@ private fun fileLabel(ctx: android.content.Context, uri: android.net.Uri): Strin
 }
 
 @Composable
-private fun Bubble(line: ChatLine) {
+private fun Bubble(line: ChatLine, onFileTap: (ChatLine) -> Unit = {}) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (line.fromCrumpet) Arrangement.Start else Arrangement.End,
@@ -242,13 +243,39 @@ private fun Bubble(line: ChatLine) {
                 line.imageUri?.let { path ->
                     coil.compose.AsyncImage(
                         model = java.io.File(path),
-                        contentDescription = "Sent image",
+                        contentDescription = if (line.fromCrumpet) "Image from Crumpet" else "Sent image",
                         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                         modifier = Modifier
                             .widthIn(max = 220.dp)
                             .heightIn(max = 260.dp)
-                            .clip(RoundedCornerShape(12.dp)),
+                            .clip(RoundedCornerShape(12.dp))
+                            // Received images (charts, progress photos) save on tap.
+                            .let { m ->
+                                if (line.fileId != null) m.clickable { onFileTap(line) } else m
+                            },
                     )
+                    if (line.text.isNotBlank()) Spacer(Modifier.height(8.dp))
+                }
+                // A non-image file from Crumpet (patch, csv, …): a tappable save chip.
+                if (line.fileId != null && line.imageUri == null) {
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Bg3)
+                            .clickable { onFileTap(line) }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("📎", fontSize = 14.sp)
+                        Spacer(Modifier.width(7.dp))
+                        Column {
+                            Text(
+                                line.fileName ?: "file",
+                                color = Cream, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+                            )
+                            Text("tap to save to Downloads", color = Muted, fontSize = 10.sp)
+                        }
+                    }
                     if (line.text.isNotBlank()) Spacer(Modifier.height(8.dp))
                 }
                 if (line.text.isNotBlank()) {

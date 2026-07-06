@@ -18,6 +18,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -102,6 +103,17 @@ object Net {
             )
         }.body()
     }
+
+    // ---- files Crumpet offers (a {"type":"file"} frame carries the id; this gets the bytes) ----
+    suspend fun fetchFile(base: String, token: String, id: String): ByteArray =
+        client.get("$base/file/$id") {
+            timeout {
+                requestTimeoutMillis = 120_000
+                socketTimeoutMillis = 120_000
+                connectTimeoutMillis = 30_000
+            }
+            header("X-Crumpet-Token", token)
+        }.body()
 
     // ---- live chat / push connection (held open by PresenceService) ----
     private val _frames = MutableSharedFlow<InFrame>(extraBufferCapacity = 64)

@@ -5,8 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.garemat.crumpet.data.AgendaItem
 import io.github.garemat.crumpet.data.ChatLine
+import io.github.garemat.crumpet.data.FileInbox
 import io.github.garemat.crumpet.data.HealthSnapshot
 import io.github.garemat.crumpet.data.InFrame
+import io.github.garemat.crumpet.data.InboxFile
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.data.QueuedMsg
 import io.github.garemat.crumpet.data.SentImage
@@ -94,8 +96,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val reconciled = cached.map { line ->
             if (line.pending && line.id !in stillQueued) line.copy(pending = false) else line
         }
+        // Files PresenceService fetched while no UI was alive aren't in the cache yet — and the
+        // WS may already be connected (no reconnect → no history frame coming). Tail-append
+        // those, but ONLY ones newer than the cache's newest user line (id = epoch millis) so
+        // old files the 100-line cache evicted don't resurface at the bottom on every open.
+        val known = reconciled.mapNotNull { it.fileId }.toSet()
+        val cutoff = reconciled.maxOfOrNull { it.id } ?: 0L
+        val missed = prefs.inboxFiles().filter { it.id !in known && it.ts > cutoff }.sortedBy { it.ts }
         // Don't clobber a history frame that raced us while we were reading the cache.
-        if (_chat.value.isEmpty()) _chat.value = reconciled
+        if (_chat.value.isEmpty()) _chat.value = reconciled + missed.map { it.toChatLine() }
     }
 
     /** Update the chat state AND persist it, so the conversation survives brain/VPN downtime. */
@@ -229,6 +238,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         f.absolutePath
     }.getOrNull()
 
+    /** sqlite datetime('now') from conversation_log — UTC "YYYY-MM-DD HH:MM:SS" → epoch millis. */
+    private fun parseTs(ts: String?): Long? = runCatching {
+        java.time.LocalDateTime.parse(ts!!.trim().replace(" ", "T"))
+            .toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+    }.getOrNull()
+
+    /** Copy a received file into the system Downloads (tap action on non-image file bubbles;
+     *  images are already visible inline). MediaStore.Downloads needs API 29+. */
+    fun saveToDownloads(line: ChatLine) = viewModelScope.launch {
+        val ctx = getApplication<Application>()
+        val toast: (String) -> Unit = { msg ->
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+        }
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+            toast("Saving needs Android 10+"); return@launch
+        }
+        val src = line.imageUri
+            ?: prefs.inboxFiles().firstOrNull { it.id == line.fileId }?.path
+            ?: run { toast("That file isn't on this device any more."); return@launch }
+        val ok = withContext(Dispatchers.IO) {
+            runCatching {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, line.fileName ?: "crumpet-file")
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE,
+                        line.mime ?: "application/octet-stream")
+                }
+                val uri = ctx.contentResolver.insert(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values,
+                ) ?: return@runCatching false
+                ctx.contentResolver.openOutputStream(uri)?.use { out ->
+                    java.io.File(src).inputStream().use { it.copyTo(out) }
+                } != null
+            }.getOrDefault(false)
+        }
+        toast(if (ok) "Saved to Downloads" else "Couldn't save the file")
+    }
+
     private fun queryName(ctx: android.content.Context, uri: android.net.Uri): String {
         var name = "file"
         runCatching {
@@ -262,7 +308,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "reply" -> f.text?.let { t -> updateChat { it + ChatLine(true, t) } }
             "push" -> f.text?.let { t ->
                 updateChat { it + ChatLine(true, t) }
-                f.id?.let { id -> if (chatActive) { Net.read(id) } else pendingReads.add(id) }
+                f.pushId?.let { id -> if (chatActive) { Net.read(id) } else pendingReads.add(id) }
+            }
+            // A file offer (chart/photos/preview). Fetch-and-store via the shared inbox
+            // (PresenceService may win the race; either way we get the stored file back),
+            // then show it — unless it's a re-offer of something already in the thread.
+            "file" -> f.fileId?.let { id ->
+                viewModelScope.launch {
+                    val file = FileInbox.obtain(
+                        getApplication(), prefs,
+                        id, f.name ?: "file", f.caption ?: "", f.mime ?: "application/octet-stream",
+                    ) ?: return@launch  // fetch failed — the brain re-offers on next reconnect
+                    updateChat { lines ->
+                        if (lines.any { it.fileId == file.id }) lines else lines + file.toChatLine()
+                    }
+                }
             }
             "state" -> _thinking.value = f.value == "thinking"
             "activity" -> _activity.value = f.text?.takeIf { it.isNotBlank() }  // null/blank clears
@@ -292,11 +352,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     ChatLine(crumpet, m.text, m.source)
                 }
+                // Received files are app-local too (history can't carry them) — weave them back
+                // in by time. Server ts is sqlite UTC "YYYY-MM-DD HH:MM:SS"; files older than
+                // the history window stay out (they've scrolled away with their conversation).
+                val serverTs = hs.map { parseTs(it.ts) }
+                val cutoff = serverTs.firstOrNull { it != null }
+                val files = prefs.inboxFiles()
+                    .filter { cutoff == null || it.ts >= cutoff }.sortedBy { it.ts }
+                val merged = mutableListOf<ChatLine>()
+                var fi = 0
+                fromServer.forEachIndexed { i, line ->
+                    val ts = serverTs[i]
+                    while (fi < files.size && ts != null && files[fi].ts <= ts) {
+                        merged += files[fi++].toChatLine()
+                    }
+                    merged += line
+                }
+                while (fi < files.size) merged += files[fi++].toChatLine()
                 // Server history is the truth, but it can't know about messages still queued in
                 // the outbox — keep those visible (pending) at the tail instead of dropping them.
                 val stillQueued = prefs.outbox().map { it.id }.toSet()
                 val queuedLines = _chat.value.filter { it.pending && it.id in stillQueued }
-                updateChat { fromServer + queuedLines }
+                updateChat { merged + queuedLines }
             }
         }
     }

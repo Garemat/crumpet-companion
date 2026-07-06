@@ -1,6 +1,8 @@
 package io.github.garemat.crumpet.data
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 
 /** One record shipped to the brain's POST /health/ingest. Shape matches core/health_ingest.py. */
 @Serializable
@@ -38,13 +40,22 @@ data class InFrame(
     val type: String,
     val text: String? = null,
     val value: String? = null,
-    val id: Int? = null,                       // proactive push / dismiss id
+    // "id" is OVERLOADED on the wire: an Int for push/dismiss frames, a String handle for
+    // file frames — so it's held as a raw primitive and read through pushId/fileId below.
+    val id: JsonPrimitive? = null,
     val messages: List<HistMsg>? = null,
     val phase: String? = null,                 // activity milestone phase (plan/build/review/pr/…)
     val source: String? = null,                // exchange: originating channel (discord/voice:…/app)
     val user: String? = null,                  // exchange: the user side of the completed turn
     val reply: String? = null,                 // exchange: Crumpet's side of the completed turn
-)
+    val name: String? = null,                  // file: original filename
+    val caption: String? = null,               // file: Crumpet's caption
+    val mime: String? = null,                  // file: content type
+    val size: Long? = null,                    // file: bytes
+) {
+    val pushId: Int? get() = id?.intOrNull                              // push / dismiss frames
+    val fileId: String? get() = id?.takeIf { it.isString }?.content     // file frames
+}
 
 @Serializable
 data class HistMsg(val role: String, val text: String, val source: String? = null, val ts: String? = null)
@@ -61,11 +72,36 @@ data class ChatLine(
     val imageUri: String? = null,
     val id: Long = 0L,
     val pending: Boolean = false,
+    val fileId: String? = null,   // set on lines carrying a file Crumpet sent (chart/photo/…)
+    val fileName: String? = null,
+    val mime: String? = null,
 )
 
 /** A user message queued for delivery (persisted outbox — survives restarts and offline gaps). */
 @Serializable
 data class QueuedMsg(val id: Long, val text: String, val ts: Long)
+
+/** A file Crumpet sent us (chart, progress photos, app preview…), fetched from the brain's
+ *  GET /file/<id> and stored locally — app-local like [SentImage], since the brain's history
+ *  sync doesn't carry files. [ts] (received-at, epoch millis) orders it into rebuilt history. */
+@Serializable
+data class InboxFile(
+    val id: String,
+    val name: String,
+    val caption: String,
+    val mime: String,
+    val path: String,
+    val ts: Long,
+) {
+    fun toChatLine() = ChatLine(
+        fromCrumpet = true,
+        text = caption,
+        imageUri = path.takeIf { mime.startsWith("image/") },
+        fileId = id,
+        fileName = name,
+        mime = mime,
+    )
+}
 
 /** Record of an image the user sent, kept locally so its thumbnail survives history reloads.
  *  [marker] is exactly the user-text the brain echoes back in history (so we can re-attach). */

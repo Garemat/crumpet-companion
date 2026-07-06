@@ -17,6 +17,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import io.github.garemat.crumpet.MainActivity
 import io.github.garemat.crumpet.R
+import io.github.garemat.crumpet.data.FileInbox
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.net.Net
 import io.github.garemat.crumpet.sync.SyncWorker
@@ -76,11 +77,24 @@ class PresenceService : Service() {
             Net.frames.collect { frame ->
                 when {
                     frame.type == "push" && !frame.text.isNullOrBlank() -> {
-                        frame.id?.let { Net.ack(it) }                 // confirm receipt
-                        postPush(frame.id ?: frame.text.hashCode(), frame.text)
+                        frame.pushId?.let { Net.ack(it) }             // confirm receipt
+                        postPush(frame.pushId ?: frame.text.hashCode(), frame.text)
                     }
-                    frame.type == "dismiss" -> frame.id?.let {        // read elsewhere → cancel here
+                    frame.type == "dismiss" -> frame.pushId?.let {    // read elsewhere → cancel here
                         NotificationManagerCompat.from(this@PresenceService).cancel(it)
+                    }
+                    // A file offer with no UI alive: fetch-and-store now (fetching marks it
+                    // delivered, so the brain stops re-offering). The ViewModel weaves stored
+                    // files into the chat on next open; no notification — the accompanying
+                    // push/reply text is the announcement.
+                    frame.type == "file" -> frame.fileId?.let { id ->
+                        scope.launch {
+                            FileInbox.obtain(
+                                applicationContext, Prefs(applicationContext),
+                                id, frame.name ?: "file", frame.caption ?: "",
+                                frame.mime ?: "application/octet-stream",
+                            )
+                        }
                     }
                 }
             }
