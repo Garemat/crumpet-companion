@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.garemat.crumpet.data.ChatLine
 import io.github.garemat.crumpet.ui.AppViewModel
+import io.github.garemat.crumpet.ui.VoiceState
 import io.github.garemat.crumpet.ui.components.CrumpetAvatar
 import io.github.garemat.crumpet.ui.theme.Bg2
 import io.github.garemat.crumpet.ui.theme.Bg3
@@ -61,6 +64,8 @@ fun ChatScreen(vm: AppViewModel) {
     val thinking by vm.thinking.collectAsStateWithLifecycle()
     val activity by vm.activity.collectAsStateWithLifecycle()
     val connected by vm.connected.collectAsStateWithLifecycle()
+    val voiceState by vm.voiceState.collectAsStateWithLifecycle()
+    val voiceNote by vm.voiceNote.collectAsStateWithLifecycle()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     var didInitialScroll by remember { mutableStateOf(false) }
@@ -89,12 +94,20 @@ fun ChatScreen(vm: AppViewModel) {
             Modifier.fillMaxWidth().padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CrumpetAvatar(Modifier.size(40.dp), active = thinking || activity != null)
+            CrumpetAvatar(
+                Modifier.size(40.dp),
+                active = thinking || activity != null || voiceState != VoiceState.Idle,
+            )
             Spacer(Modifier.width(11.dp))
             Column {
                 Text("Crumpet", style = MaterialTheme.typography.titleLarge, color = Cream)
                 Text(
                     when {
+                        // Voice states first — a PTT turn is THIS device, right now.
+                        voiceState == VoiceState.Recording -> "listening…"
+                        voiceState == VoiceState.Thinking -> "thinking…"
+                        voiceState == VoiceState.Speaking -> "speaking…"
+                        voiceNote != null -> voiceNote!!
                         // A live milestone outranks the generic spinner — it's why the turn is long.
                         activity != null -> "⚙ $activity"
                         thinking -> "thinking…"
@@ -103,6 +116,9 @@ fun ChatScreen(vm: AppViewModel) {
                         else -> "offline"
                     },
                     color = when {
+                        voiceState == VoiceState.Recording -> Brass
+                        voiceState != VoiceState.Idle -> Jade
+                        voiceNote != null -> Muted
                         activity != null -> Brass
                         connected -> Jade
                         else -> Muted
@@ -188,13 +204,34 @@ fun ChatScreen(vm: AppViewModel) {
                 maxLines = 4,
             )
             Spacer(Modifier.width(8.dp))
+            // The action button is Send when there's something typed/staged, otherwise the PTT
+            // mic (tap = record, tap again = send the utterance). While recording it stays a
+            // Stop button even if text is typed — the recorder must never be left running.
+            val recording = voiceState == VoiceState.Recording
+            val micMode = recording || (input.isBlank() && pending == null)
+            val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+            ) { granted -> if (granted) vm.toggleVoice() }
             IconButton(
-                onClick = { send() },
+                onClick = {
+                    if (!micMode) send()
+                    else if (androidx.core.content.ContextCompat.checkSelfPermission(
+                            ctx, android.Manifest.permission.RECORD_AUDIO,
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) vm.toggleVoice()
+                    else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                },
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(15.dp))
-                    .background(Brass),
-            ) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color(0xFF22170C)) }
+                    .background(if (recording) Color(0xFFC0564C) else Brass),
+            ) {
+                when {
+                    !micMode -> Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color(0xFF22170C))
+                    recording -> Icon(Icons.Filled.Stop, "Stop and send", tint = Cream)
+                    else -> Icon(Icons.Filled.Mic, "Talk to Crumpet", tint = Color(0xFF22170C))
+                }
+            }
         }
     }
 }

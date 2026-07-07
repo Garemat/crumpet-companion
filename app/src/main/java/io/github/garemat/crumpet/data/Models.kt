@@ -1,5 +1,6 @@
 package io.github.garemat.crumpet.data
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
@@ -30,6 +31,17 @@ data class IngestResult(val ok: Boolean = false, val counts: Map<String, Int> = 
 
 @Serializable
 data class AttachResult(val ok: Boolean = false, val reply: String = "")
+
+/** POST /voice response. [ok]=false + [error] covers the brain's junk-transcript guard
+ *  ("nothing heard"); [ttsId] is null when synthesis failed (text reply still stands). */
+@Serializable
+data class VoiceResult(
+    val ok: Boolean = false,
+    val heard: String = "",
+    val reply: String? = null,
+    @SerialName("tts_id") val ttsId: String? = null,
+    val error: String? = null,
+)
 
 // ---- chat gateway frames (mirror crumpet/gateway/chat_ws.py) ----
 @Serializable

@@ -7,6 +7,7 @@ import io.github.garemat.crumpet.data.IngestBatch
 import io.github.garemat.crumpet.data.IngestResult
 import io.github.garemat.crumpet.data.OutMessage
 import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.data.VoiceResult
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -103,6 +104,33 @@ object Net {
             )
         }.body()
     }
+
+    // ---- voice turn (PTT WAV) → /voice; reply audio ← /tts/<id> ----
+    suspend fun voice(base: String, token: String, wav: ByteArray): VoiceResult {
+        if (base.isBlank()) return VoiceResult(false, error = "Not paired.")
+        return client.post("$base/voice") {
+            // STT + a full brain turn + TTS — same generous window as /attach.
+            timeout {
+                requestTimeoutMillis = 180_000
+                socketTimeoutMillis = 180_000
+                connectTimeoutMillis = 30_000
+            }
+            header("X-Crumpet-Token", token)
+            contentType(ContentType("audio", "wav"))
+            setBody(wav)
+        }.body()
+    }
+
+    /** The synthesized reply is ephemeral on the brain (5-min TTL) — fetch it promptly. */
+    suspend fun fetchTts(base: String, token: String, id: String): ByteArray =
+        client.get("$base/tts/$id") {
+            timeout {
+                requestTimeoutMillis = 60_000
+                socketTimeoutMillis = 60_000
+                connectTimeoutMillis = 30_000
+            }
+            header("X-Crumpet-Token", token)
+        }.body()
 
     // ---- files Crumpet offers (a {"type":"file"} frame carries the id; this gets the bytes) ----
     suspend fun fetchFile(base: String, token: String, id: String): ByteArray =
