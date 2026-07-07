@@ -28,6 +28,12 @@ class WakeWordDetector(context: Context, private val threshold: Float = 0.5f) {
         private const val REFRACTORY_CHUNKS = 25  // ~2 s of deafness after a detection
     }
 
+    // NB: the bundled melspectrogram.tflite is the shell's model with its input shape patched
+    // from the dynamic [1,-1] to a fixed [1,1760]. Android's TFLite allocates tensors at
+    // CONSTRUCTION (unlike desktop Python, which is lazy), and the dynamic default [1,1]
+    // overflows CONV_2D before any resizeInput can run — it crashed the app. The patch is a
+    // shape-only flatbuffer edit (weights untouched; output verified bit-identical). The
+    // resize below is now a no-op but harmless.
     private val melspec = interpreter(context, "oww/melspectrogram.tflite").apply {
         resizeInput(0, intArrayOf(1, MEL_WINDOW))
         allocateTensors()
