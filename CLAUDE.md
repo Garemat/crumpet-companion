@@ -38,7 +38,13 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
   `activity`/`exchange` in — `activity` is the "currently working on X" banner: curated text + phase,
   `text: null` clears, the live frame is replayed on connect; we also clear it locally on disconnect.
   `exchange` is a turn that completed on ANOTHER channel ({source,user,reply}) — append it to the
-  thread live; the brain never sends us our own turns, so no dedupe is needed).
+  thread live; the brain never sends us our own WS `message` turns, so no dedupe is needed. Our own
+  PTT voice turns DO come back as `exchange` (source `app-voice`) by design — the voice surface
+  writes no chat lines itself, so that frame is what lands them in the thread).
+- Voice (PTT): WAV → `POST /voice` → `{ok, heard, reply, tts_id}`; Kokoro audio via `GET /tts/<id>`
+  (ephemeral, 5-min TTL — fetch promptly). `audio/VoiceRecorder.kt` captures 16kHz mono PCM16;
+  `audio/TtsPlayer.kt` plays with transient-may-duck focus (music dips, car BT works as-is).
+  Design: `docs/backlog/car-mode.md` in the Crumpet repo.
 - Design + rationale: `docs/backlog/phone-companion.md` in the Crumpet repo.
 
 ## Status
