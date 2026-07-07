@@ -5,8 +5,6 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 /** Push-to-talk capture: 16kHz mono 16-bit PCM — what the brain's Whisper wants — wrapped
  *  as WAV in memory (30s ≈ 960KB, no files). One utterance at a time; a hard cap stops a
@@ -65,24 +63,6 @@ class VoiceRecorder {
         rec.release()
         val pcm = synchronized(buffer) { buffer.toByteArray() }
         buffer.reset()
-        return if (pcm.size < MIN_UTTERANCE_BYTES) null else wav(pcm)
-    }
-
-    private fun wav(pcm: ByteArray): ByteArray {
-        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
-        header.put("RIFF".toByteArray())
-        header.putInt(36 + pcm.size)
-        header.put("WAVE".toByteArray())
-        header.put("fmt ".toByteArray())
-        header.putInt(16)                       // PCM fmt chunk size
-        header.putShort(1)                      // PCM
-        header.putShort(1)                      // mono
-        header.putInt(SAMPLE_RATE)
-        header.putInt(SAMPLE_RATE * 2)          // byte rate
-        header.putShort(2)                      // block align
-        header.putShort(16)                     // bits per sample
-        header.put("data".toByteArray())
-        header.putInt(pcm.size)
-        return header.array() + pcm
+        return if (pcm.size < MIN_UTTERANCE_BYTES) null else pcmToWav(pcm, SAMPLE_RATE)
     }
 }

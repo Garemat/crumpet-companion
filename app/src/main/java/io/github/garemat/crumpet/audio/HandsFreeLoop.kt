@@ -1,0 +1,151 @@
+package io.github.garemat.crumpet.audio
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.os.SystemClock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.io.ByteArrayOutputStream
+
+/** The full-screen hands-free ear: one mic loop that feeds the on-device wake detector
+ *  while Crumpet is idle, and on "hey crumpet" chirps, captures the utterance with
+ *  silence endpointing, and hands the WAV to [VoiceSession]. Runs ONLY while
+ *  FaceActivity is started — that's the battery deal: no background mic service, ever.
+ *  The mic is muted (read-and-discard) while a turn is in flight, plus a short tail
+ *  after Crumpet speaks so his own voice can't wake him (the satellites' echo guard). */
+class HandsFreeLoop(private val context: Context) {
+
+    companion object {
+        private const val SAMPLE_RATE = 16000
+        private const val SILENCE_MEAN_ABS = 0.015f * 32768f  // satellite SILENCE_THRESHOLD
+        private const val SILENCE_STOP_MS = 1300L    // quiet this long after speech = done
+        private const val SPEECH_WAIT_MS = 6000L     // woke but said nothing = stand down
+        private const val UTTERANCE_CAP_MS = 15000L  // satellite UTTERANCE_TIMEOUT
+        private const val ECHO_TAIL_MS = 1000L       // deaf period after Crumpet's own voice
+    }
+
+    private var thread: Thread? = null
+    @Volatile private var running = false
+
+    /** True while capturing an utterance after a wake word (the "I'm listening" UI). */
+    private val _listening = MutableStateFlow(false)
+    val listening = _listening.asStateFlow()
+
+    fun start() {
+        if (running) return
+        running = true
+        thread = Thread(::loop, "crumpet-handsfree").apply { start() }
+    }
+
+    fun stop() {
+        running = false
+        thread?.join(1500)
+        thread = null
+        _listening.value = false
+    }
+
+    @SuppressLint("MissingPermission")  // FaceActivity only starts the loop when granted
+    private fun loop() {
+        val minBuf = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+        )
+        val record = runCatching {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(minBuf, SAMPLE_RATE),
+            )
+        }.getOrNull() ?: return
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            return
+        }
+        val detector = WakeWordDetector(context)
+        val chunk = ShortArray(WakeWordDetector.CHUNK_SAMPLES)
+        var mutedUntil = 0L
+        try {
+            record.startRecording()
+            while (running) {
+                val n = record.read(chunk, 0, chunk.size)
+                if (n <= 0) break
+                if (VoiceSession.state.value != VoiceState.Idle) {
+                    // A turn is in flight (PTT or our own) — stay deaf, and for a tail
+                    // after it ends so the reply's last words can't re-wake us.
+                    mutedUntil = SystemClock.elapsedRealtime() + ECHO_TAIL_MS
+                    detector.reset()
+                    continue
+                }
+                if (SystemClock.elapsedRealtime() < mutedUntil) continue
+                if (n == chunk.size && detector.accept(chunk)) {
+                    chirp()
+                    val wav = capture(record, chunk)
+                    if (wav != null) VoiceSession.sendWav(context, wav)
+                    detector.reset()
+                }
+            }
+        } finally {
+            runCatching { record.stop() }
+            record.release()
+            detector.close()
+            _listening.value = false
+        }
+    }
+
+    /** Post-wake capture with the satellite path's endpointing: wait for speech (or give
+     *  up), then stop after a silence gap, hard-capped. Returns WAV, or null for a false
+     *  wake that never turned into speech. */
+    private fun capture(record: AudioRecord, chunk: ShortArray): ByteArray? {
+        _listening.value = true
+        val pcm = ByteArrayOutputStream()
+        val started = SystemClock.elapsedRealtime()
+        var heardSpeech = false
+        var silentSince = 0L
+        try {
+            while (running) {
+                val now = SystemClock.elapsedRealtime()
+                if (now - started > UTTERANCE_CAP_MS) break
+                if (!heardSpeech && now - started > SPEECH_WAIT_MS) return null
+                val n = record.read(chunk, 0, chunk.size)
+                if (n <= 0) break
+                var sum = 0L
+                for (i in 0 until n) {
+                    val s = chunk[i]
+                    pcm.write(s.toInt() and 0xFF)
+                    pcm.write((s.toInt() shr 8) and 0xFF)
+                    sum += if (s >= 0) s.toLong() else -s.toLong()
+                }
+                val silent = (sum.toFloat() / n) < SILENCE_MEAN_ABS
+                if (silent) {
+                    if (heardSpeech) {
+                        if (silentSince == 0L) silentSince = now
+                        else if (now - silentSince > SILENCE_STOP_MS) break
+                    }
+                } else {
+                    heardSpeech = true
+                    silentSince = 0L
+                }
+            }
+        } finally {
+            _listening.value = false
+        }
+        if (!heardSpeech) return null
+        return pcmToWav(pcm.toByteArray())
+    }
+
+    private fun chirp() {
+        runCatching {
+            val fd = context.assets.openFd("oww/awake.wav")
+            MediaPlayer().apply {
+                setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
+                fd.close()
+                setOnCompletionListener { it.release() }
+                prepare()
+                start()
+            }
+        }
+    }
+}

@@ -36,6 +36,9 @@ android {
         targetSdk = 36
         versionCode = gitVersionCode()
         versionName = gitVersionName()
+        // Single sideloaded target (Pixel/GrapheneOS = arm64). Keeps the tflite native
+        // lib to one ABI instead of shipping ~12MB of unused x86/armeabi variants.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     signingConfigs {
@@ -106,6 +109,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.coil.compose)
+    implementation(libs.tensorflow.lite)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
