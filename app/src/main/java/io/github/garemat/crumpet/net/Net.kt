@@ -174,6 +174,22 @@ object Net {
     /** Tell the brain the user has seen a proactive push (dismiss it on other devices). */
     fun read(id: Int) { control.trySend("""{"type":"read","id":$id}""") }
 
+    /** Confirm (or refuse) a device action the brain fired — it's waiting on this to tell
+     *  the user "on it" vs "your phone didn't pick that up". */
+    fun ackAction(id: String, ok: Boolean) {
+        control.trySend("""{"type":"action_ack","id":"$id","ok":$ok}""")
+    }
+
+    // Full-screen/car mode parks the brain's workshop while it holds (car-mode.md). The flag
+    // is remembered so a RECONNECT re-asserts it — the brain scopes it to the socket's life,
+    // so a drop while the face is up would otherwise silently un-park the workshop.
+    @Volatile private var engagedNow = false
+
+    fun engaged(active: Boolean) {
+        engagedNow = active
+        control.trySend("""{"type":"engaged","active":$active}""")
+    }
+
     private suspend fun DefaultClientWebSocketSession.drainOutbox(prefs: Prefs) {
         for (m in prefs.outbox()) {
             send(Frame.Text(json.encodeToString(OutMessage(text = m.text))))
@@ -200,6 +216,7 @@ object Net {
                     _status.value = "Connected over WireGuard"
                     backoff = 4_000L
                     val sender = launch {
+                        if (engagedNow) send(Frame.Text("""{"type":"engaged","active":true}"""))
                         drainOutbox(prefs)  // deliver anything queued while offline, in order
                         while (isActive) {
                             select<Unit> {

@@ -24,6 +24,7 @@ import io.github.garemat.crumpet.R
 import io.github.garemat.crumpet.audio.VoiceSession
 import io.github.garemat.crumpet.audio.VoiceState
 import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.net.Net
 import kotlinx.coroutines.launch
 
 /** Full-screen Crumpet: a WebView on the brain's own `GET /face` (the SAME animated face
@@ -106,6 +107,19 @@ class FaceActivity : ComponentActivity() {
             .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setAutoEnterEnabled(true) }
             .build()
         setPictureInPictureParams(params)
+    }
+
+    // Full-screen face = engaged: the brain parks its workshop so every turn is snappy
+    // (car-mode.md — engagement, not location). onStop doesn't fire while in PiP, so a
+    // face floating over Maps keeps the workshop parked — exactly the driving case.
+    override fun onStart() {
+        super.onStart()
+        Net.engaged(true)
+    }
+
+    override fun onStop() {
+        Net.engaged(false)
+        super.onStop()
     }
 
     override fun onUserLeaveHint() {
