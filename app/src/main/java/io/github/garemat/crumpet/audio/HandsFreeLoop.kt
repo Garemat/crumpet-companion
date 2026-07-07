@@ -97,17 +97,24 @@ class HandsFreeLoop(private val context: Context) {
             var mutedUntil = 0L
             record.startRecording()
             while (running) {
-                val n = record.read(chunk, 0, chunk.size)
-                if (n <= 0) break
+                // Crucial ordering: check state BEFORE reading. While a turn runs, TtsPlayer
+                // holds audio focus and plays the reply; reading the mic in that window could
+                // error the AudioRecord and kill the thread — the ear went dead after one wake.
+                // So during a turn we don't touch the mic at all.
                 if (VoiceSession.state.value != VoiceState.Idle) {
-                    // A turn is in flight (PTT or our own) — stay deaf, and for a tail
-                    // after it ends so the reply's last words can't re-wake us.
-                    mutedUntil = SystemClock.elapsedRealtime() + ECHO_TAIL_MS
+                    mutedUntil = SystemClock.elapsedRealtime() + ECHO_TAIL_MS  // echo tail after
                     detector.reset()
+                    Thread.sleep(60)
                     continue
                 }
-                if (SystemClock.elapsedRealtime() < mutedUntil) continue
+                if (SystemClock.elapsedRealtime() < mutedUntil) {
+                    Thread.sleep(20)  // brief deaf tail so the reply's last words can't re-wake us
+                    continue
+                }
+                val n = record.read(chunk, 0, chunk.size)
+                if (n < 0) throw IllegalStateException("microphone read error ($n)")  // -> restart
                 if (n == chunk.size && detector.accept(chunk)) {
+                    Log.d("VoiceTiming", "wake detected")
                     chirp()
                     val wav = capture(record, chunk)
                     if (wav != null) VoiceSession.sendWav(context, wav)
@@ -160,7 +167,10 @@ class HandsFreeLoop(private val context: Context) {
             _listening.value = false
         }
         if (!heardSpeech) return null
-        return pcmToWav(pcm.toByteArray())
+        val bytes = pcm.toByteArray()
+        Log.d("VoiceTiming", "captured ${bytes.size / 32}ms speech in " +
+            "${SystemClock.elapsedRealtime() - started}ms of listening")
+        return pcmToWav(bytes)
     }
 
     private fun chirp() {

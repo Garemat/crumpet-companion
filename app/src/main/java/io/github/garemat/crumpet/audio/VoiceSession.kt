@@ -66,6 +66,9 @@ object VoiceSession {
     private suspend fun turn(app: Context, wav: ByteArray) {
         _state.value = VoiceState.Thinking
         val (base, tok, _) = Prefs(app).config()
+        // Client-side timing (pairs with the brain's stage log) — the gap the field report
+        // flagged. `adb logcat -s VoiceTiming` shows the whole chain across both halves.
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val result = runCatching {
             withContext(Dispatchers.IO) { Net.voice(base, tok, wav) }
         }.getOrElse { e ->
@@ -73,6 +76,7 @@ object VoiceSession {
             _state.value = VoiceState.Idle
             return
         }
+        val roundTrip = android.os.SystemClock.elapsedRealtime() - t0
         if (!result.ok) {
             _note.value = "Didn't catch that — try again?"
             _state.value = VoiceState.Idle
@@ -81,6 +85,11 @@ object VoiceSession {
         val tts = result.ttsId?.let { id ->
             withContext(Dispatchers.IO) { runCatching { Net.fetchTts(base, tok, id) }.getOrNull() }
         }
+        val ttsFetch = android.os.SystemClock.elapsedRealtime() - t0 - roundTrip
+        android.util.Log.d(
+            "VoiceTiming",
+            "send->reply(+synth on brain)=${roundTrip}ms, tts fetch=${ttsFetch}ms",
+        )
         if (tts == null) {
             _state.value = VoiceState.Idle  // reply text still lands via the exchange frame
             return

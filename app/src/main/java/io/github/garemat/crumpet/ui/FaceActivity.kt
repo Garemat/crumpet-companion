@@ -26,6 +26,9 @@ import io.github.garemat.crumpet.audio.VoiceSession
 import io.github.garemat.crumpet.audio.VoiceState
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.net.Net
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /** Full-screen Crumpet: a WebView on the brain's own `GET /face` (the SAME animated face
@@ -41,10 +44,15 @@ class FaceActivity : ComponentActivity() {
         // The brain's state WS (GATEWAY_WS_PORT default). The face page connects itself
         // via its ?ws=…&token=… params; auth is the device's GATEWAY_WS_TOKENS entry.
         private const val STATE_WS_PORT = 8800
+        // Bounded auto-recovery: a transient mic error restarts the ear rather than needing a
+        // trip out of full-screen; a hard failure (mic held) exhausts this and surfaces once.
+        private const val MAX_HANDSFREE_RESTARTS = 3
     }
 
     private var web: WebView? = null
     private var handsFree: HandsFreeLoop? = null
+    private var handsFreeJob: kotlinx.coroutines.Job? = null
+    private var handsFreeRestarts = 0
 
     private val ptt = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -105,26 +113,53 @@ class FaceActivity : ComponentActivity() {
         val loop = HandsFreeLoop(applicationContext)
         handsFree = loop
         loop.start()
-        lifecycleScope.launch {
-            // Perk the face up locally the moment the wake word fires — the utterance
-            // hasn't reached the brain yet, so nothing else would show "listening".
-            loop.listening.collect { on ->
-                if (on) web?.evaluateJavascript(
-                    "window.crumpetFaceState && window.crumpetFaceState('listening')", null,
-                )
+        handsFreeJob = lifecycleScope.launch {
+            // Drive THIS phone's face from its own turn state — instant and accurate, so it
+            // leaves "listening" the moment capture ends instead of waiting on a brain frame
+            // (which lagged behind STT — the "stays listening" the field report flagged).
+            launch {
+                combine(loop.listening, VoiceSession.state) { listening, st ->
+                    when {
+                        listening -> "listening"
+                        st == VoiceState.Thinking -> "thinking"
+                        st == VoiceState.Speaking -> "speaking"
+                        else -> "idle"
+                    }
+                }.distinctUntilChanged().collect { s ->
+                    web?.evaluateJavascript(
+                        "window.crumpetFaceState && window.crumpetFaceState('$s')", null,
+                    )
+                }
             }
-        }
-        lifecycleScope.launch {
-            // If the ear couldn't start, the face still works as a display — just say so once.
-            loop.error.collect { msg ->
-                if (msg != null) android.widget.Toast.makeText(
-                    this@FaceActivity, "Hands-free off: $msg", android.widget.Toast.LENGTH_LONG,
-                ).show()
+            launch {
+                // The ear stopping unexpectedly (a mic read error mid-session) shouldn't need a
+                // trip out and back to full-screen. Restart it a few times; only surface the
+                // Toast once the budget's spent (or it's a hard failure like the mic being held).
+                loop.error.collect { msg ->
+                    if (msg == null) return@collect
+                    if (handsFreeRestarts < MAX_HANDSFREE_RESTARTS) {
+                        handsFreeRestarts++
+                        // Restart from the OUTER scope — stopHandsFree cancels this very
+                        // (loop-bound) job, so the restart must not live inside it.
+                        lifecycleScope.launch {
+                            delay(500)
+                            stopHandsFree()
+                            startHandsFree()
+                        }
+                    } else {
+                        android.widget.Toast.makeText(
+                            this@FaceActivity, "Hands-free off: $msg",
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
             }
         }
     }
 
     private fun stopHandsFree() {
+        handsFreeJob?.cancel()
+        handsFreeJob = null
         handsFree?.stop()
         handsFree = null
     }
@@ -155,6 +190,7 @@ class FaceActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         Net.engaged(true)
+        handsFreeRestarts = 0  // fresh restart budget each time the face comes up
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
             == android.content.pm.PackageManager.PERMISSION_GRANTED
         ) startHandsFree()

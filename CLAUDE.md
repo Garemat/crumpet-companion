@@ -59,7 +59,14 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
   shell runs — audio only leaves the phone AFTER detection, same rule as the satellites).
   `audio/HandsFreeLoop.kt` runs the mic ONLY while `FaceActivity` is on screen (incl. PiP) — that's
   the battery deal, no background mic service — wakes → chirps → captures with silence endpointing →
-  `VoiceSession.sendWav`. Retune with the `threshold` (shell default 0.5).
+  `VoiceSession.sendWav`. Retune with the `threshold` (shell default 0.5). **Gotcha:** the loop must
+  NOT read the mic while a turn is in flight — TtsPlayer holds audio focus + plays the reply, and
+  reading then can error the AudioRecord and kill the thread (the ear froze after one wake). It checks
+  `VoiceSession.state` BEFORE reading and sleeps through the turn. `FaceActivity` drives the phone's
+  own face locally from `listening`+`VoiceSession.state` (not brain frames — those lagged behind STT),
+  and bounded-restarts the ear on an unexpected stop.
+- Voice timing (the "gap" audit): `adb logcat -s VoiceTiming` shows the client half (capture ms,
+  send→reply, tts fetch); the brain logs the server half (stt/think/tts/total) via `crumpet-brain.sh logs`.
 - Device actions: `{"type":"action","id","verb",…}` in → `push/ActionRunner.kt` (the
   AUTHORITATIVE verb allowlist: `navigate` builds `google.navigation:`/`geo:` URIs from a plain
   place string, `media` sends media-key events; unknown verbs refused) → honest
