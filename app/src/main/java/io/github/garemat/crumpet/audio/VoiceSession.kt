@@ -51,6 +51,19 @@ object VoiceSession {
             _state.value = VoiceState.Idle  // fumbled tap — too short to be speech
             return@launch
         }
+        turn(app, wav)
+    }
+
+    /** Run a turn from an already-captured WAV — the hands-free loop's entry (it does its
+     *  own wake + capture, then hands the utterance here). No-op if a turn is already
+     *  running, so an overlapping wake can't double-fire. Must be called with a WAV that
+     *  actually holds speech; the loop's endpointing guarantees that. */
+    fun sendWav(context: Context, wav: ByteArray) {
+        if (_state.value != VoiceState.Idle) return
+        scope.launch { turn(context.applicationContext, wav) }
+    }
+
+    private suspend fun turn(app: Context, wav: ByteArray) {
         _state.value = VoiceState.Thinking
         val (base, tok, _) = Prefs(app).config()
         val result = runCatching {
@@ -58,19 +71,19 @@ object VoiceSession {
         }.getOrElse { e ->
             _note.value = "Voice failed: ${e.message?.take(80) ?: "can't reach the brain"}"
             _state.value = VoiceState.Idle
-            return@launch
+            return
         }
         if (!result.ok) {
             _note.value = "Didn't catch that — try again?"
             _state.value = VoiceState.Idle
-            return@launch
+            return
         }
         val tts = result.ttsId?.let { id ->
             withContext(Dispatchers.IO) { runCatching { Net.fetchTts(base, tok, id) }.getOrNull() }
         }
         if (tts == null) {
             _state.value = VoiceState.Idle  // reply text still lands via the exchange frame
-            return@launch
+            return
         }
         _state.value = VoiceState.Speaking
         TtsPlayer.play(app, tts) { _state.value = VoiceState.Idle }

@@ -54,6 +54,12 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
 - Engaged: the face's onStart/onStop sends `{"type":"engaged","active":bool}` — full-screen/PiP
   parks the brain's workshop for snappy turns (session-scoped on the brain; `Net` re-asserts the
   flag on reconnect). Engagement, not location — never wire this to presence/geofencing.
+- Wake word ("hey crumpet"): on-device, `audio/WakeWordDetector.kt` (a Kotlin port of the shell's
+  wyoming-openwakeword 3-model tflite pipeline; models bundled in `assets/oww/`, same files the desk
+  shell runs — audio only leaves the phone AFTER detection, same rule as the satellites).
+  `audio/HandsFreeLoop.kt` runs the mic ONLY while `FaceActivity` is on screen (incl. PiP) — that's
+  the battery deal, no background mic service — wakes → chirps → captures with silence endpointing →
+  `VoiceSession.sendWav`. Retune with the `threshold` (shell default 0.5).
 - Device actions: `{"type":"action","id","verb",…}` in → `push/ActionRunner.kt` (the
   AUTHORITATIVE verb allowlist: `navigate` builds `google.navigation:`/`geo:` URIs from a plain
   place string, `media` sends media-key events; unknown verbs refused) → honest
