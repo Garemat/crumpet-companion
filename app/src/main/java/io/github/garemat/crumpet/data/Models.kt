@@ -64,9 +64,13 @@ data class InFrame(
     val caption: String? = null,               // file: Crumpet's caption
     val mime: String? = null,                  // file: content type
     val size: Long? = null,                    // file: bytes
+    val verb: String? = null,                  // action: navigate | media (ActionRunner's table)
+    val query: String? = null,                 // action navigate: destination (plain text, never a URI)
+    val control: String? = null,               // action media: play | pause | next | prev
 ) {
     val pushId: Int? get() = id?.intOrNull                              // push / dismiss frames
     val fileId: String? get() = id?.takeIf { it.isString }?.content     // file frames
+    val actionId: String? get() = fileId                                // action frames (same shape)
 }
 
 @Serializable

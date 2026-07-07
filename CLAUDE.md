@@ -51,6 +51,14 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
   `?ws=host:8800/ws&token=…` params — the phone needs its own entry in the brain's
   `GATEWAY_WS_TOKENS` (reuse the chat token value so the app keeps one stored token). Leaving
   the app auto-enters picture-in-picture (mic RemoteAction included); tap to expand.
+- Engaged: the face's onStart/onStop sends `{"type":"engaged","active":bool}` — full-screen/PiP
+  parks the brain's workshop for snappy turns (session-scoped on the brain; `Net` re-asserts the
+  flag on reconnect). Engagement, not location — never wire this to presence/geofencing.
+- Device actions: `{"type":"action","id","verb",…}` in → `push/ActionRunner.kt` (the
+  AUTHORITATIVE verb allowlist: `navigate` builds `google.navigation:`/`geo:` URIs from a plain
+  place string, `media` sends media-key events; unknown verbs refused) → honest
+  `{"type":"action_ack","id","ok"}` back (navigate nacks when the app isn't visible — Android
+  silently drops background activity starts). Never execute a URI/intent from the wire.
 - Design + rationale: `docs/backlog/phone-companion.md` in the Crumpet repo.
 
 ## Status
