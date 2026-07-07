@@ -6,6 +6,7 @@ import io.github.garemat.crumpet.net.Net
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -96,5 +97,27 @@ object VoiceSession {
         }
         _state.value = VoiceState.Speaking
         TtsPlayer.play(app, tts) { _state.value = VoiceState.Idle }
+        // Watchdog: MediaPlayer's completion callback occasionally doesn't fire (a hung or
+        // odd audio left the face stuck on 'speaking'). The WAV's own length is a hard upper
+        // bound, so force the turn closed a beat past it if playback never reported done.
+        val guardMs = wavDurationMs(tts) + 1500
+        scope.launch {
+            delay(guardMs)
+            if (_state.value == VoiceState.Speaking) {
+                android.util.Log.w("VoiceSession", "TTS never reported done in ${guardMs}ms — forcing idle")
+                TtsPlayer.stop()
+                _state.value = VoiceState.Idle
+            }
+        }
+    }
+
+    /** Duration of a 16-bit mono WAV from its header (sample rate at offset 24). A rough
+     *  upper bound is all the watchdog needs; falls back to a few seconds if malformed. */
+    private fun wavDurationMs(wav: ByteArray): Long {
+        if (wav.size < 44) return 4000
+        val sr = (wav[24].toInt() and 0xFF) or ((wav[25].toInt() and 0xFF) shl 8) or
+            ((wav[26].toInt() and 0xFF) shl 16) or ((wav[27].toInt() and 0xFF) shl 24)
+        if (sr <= 0) return 4000
+        return (wav.size - 44).toLong() * 1000L / (sr.toLong() * 2L)
     }
 }
