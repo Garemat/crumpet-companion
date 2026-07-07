@@ -44,7 +44,13 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
 - Voice (PTT): WAV → `POST /voice` → `{ok, heard, reply, tts_id}`; Kokoro audio via `GET /tts/<id>`
   (ephemeral, 5-min TTL — fetch promptly). `audio/VoiceRecorder.kt` captures 16kHz mono PCM16;
   `audio/TtsPlayer.kt` plays with transient-may-duck focus (music dips, car BT works as-is).
-  Design: `docs/backlog/car-mode.md` in the Crumpet repo.
+  The state machine is the app-scoped `audio/VoiceSession.kt` — chat mic and the face PiP action
+  share it. Design: `docs/backlog/car-mode.md` in the Crumpet repo.
+- Full-screen face (`ui/FaceActivity.kt`): a WebView on the brain's `GET /face` (the same
+  animated face the desk shells use), state-fed by the gateway WS on port 8800 via the page's
+  `?ws=host:8800/ws&token=…` params — the phone needs its own entry in the brain's
+  `GATEWAY_WS_TOKENS` (reuse the chat token value so the app keeps one stored token). Leaving
+  the app auto-enters picture-in-picture (mic RemoteAction included); tap to expand.
 - Design + rationale: `docs/backlog/phone-companion.md` in the Crumpet repo.
 
 ## Status

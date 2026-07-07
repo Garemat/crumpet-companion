@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -47,8 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.garemat.crumpet.data.ChatLine
+import io.github.garemat.crumpet.audio.VoiceState
 import io.github.garemat.crumpet.ui.AppViewModel
-import io.github.garemat.crumpet.ui.VoiceState
 import io.github.garemat.crumpet.ui.components.CrumpetAvatar
 import io.github.garemat.crumpet.ui.theme.Bg2
 import io.github.garemat.crumpet.ui.theme.Bg3
@@ -89,6 +90,7 @@ fun ChatScreen(vm: AppViewModel) {
         }
     }
 
+    val headerCtx = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -126,6 +128,19 @@ fun ChatScreen(vm: AppViewModel) {
                     fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                 )
             }
+            Spacer(Modifier.weight(1f))
+            // Full-screen face (goes PiP when you switch to Maps etc.) — the car/desk mode.
+            IconButton(
+                onClick = {
+                    headerCtx.startActivity(
+                        android.content.Intent(headerCtx, io.github.garemat.crumpet.ui.FaceActivity::class.java),
+                    )
+                },
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(Bg3),
+            ) { Icon(Icons.Filled.Fullscreen, "Full-screen Crumpet", tint = Jade) }
         }
 
         LazyColumn(
