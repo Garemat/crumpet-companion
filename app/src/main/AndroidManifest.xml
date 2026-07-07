@@ -51,6 +51,16 @@
         </activity>
 
         <!-- API 34+ rationale -->
+        <!-- Full-screen face; drops into picture-in-picture when another app takes over.
+             configChanges keeps the WebView (and its live state-WS) alive through the
+             PiP resize instead of recreating the activity mid-shrink. -->
+        <activity
+            android:name=".ui.FaceActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:theme="@style/Theme.Crumpet" />
+
         <activity-alias
             android:name="ViewPermissionUsageActivity"
             android:exported="true"

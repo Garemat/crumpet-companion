@@ -12,8 +12,7 @@ import io.github.garemat.crumpet.data.InboxFile
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.data.QueuedMsg
 import io.github.garemat.crumpet.data.SentImage
-import io.github.garemat.crumpet.audio.TtsPlayer
-import io.github.garemat.crumpet.audio.VoiceRecorder
+import io.github.garemat.crumpet.audio.VoiceSession
 import io.github.garemat.crumpet.health.CalendarRepo
 import io.github.garemat.crumpet.health.HealthRepo
 import io.github.garemat.crumpet.net.Net
@@ -29,14 +28,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** The PTT round-trip: Idle → (tap) Recording → (tap) Thinking → Speaking → Idle. */
-enum class VoiceState { Idle, Recording, Thinking, Speaking }
-
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = Prefs(app)
     val health = HealthRepo(app)
     val calendar = CalendarRepo(app)
-    private val recorder = VoiceRecorder()
 
     val serverUrl: StateFlow<String> =
         prefs.serverUrl.stateIn(viewModelScope, SharingStarted.Eagerly, "")
@@ -60,12 +55,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val activity = _activity.asStateFlow()
     private val _syncMsg = MutableStateFlow<String?>(null)
     val syncMsg = _syncMsg.asStateFlow()
-    private val _voiceState = MutableStateFlow(VoiceState.Idle)
-    val voiceState = _voiceState.asStateFlow()
-    // One-line voice feedback for the chat header ("didn't catch that", transport errors) —
-    // transient by design: never enters the chat thread or the persisted cache.
-    private val _voiceNote = MutableStateFlow<String?>(null)
-    val voiceNote = _voiceNote.asStateFlow()
+    // PTT lives in the app-scoped VoiceSession (the face activity's PiP action shares it).
+    val voiceState = VoiceSession.state
+    val voiceNote = VoiceSession.note
 
     // Proactive pushes shown but not yet marked read (read = user saw them in chat → dismiss elsewhere).
     private val pendingReads = mutableSetOf<Int>()
@@ -188,52 +180,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
-    /** PTT: first tap records, second tap sends. The finished turn's chat lines arrive via
-     *  the `exchange` frame (the brain doesn't skip the asker for /voice — this surface
-     *  writes no chat lines itself), so voice turns land in the one thread like any other
-     *  channel's. UI gates this behind the RECORD_AUDIO grant. */
-    fun toggleVoice() {
-        when (_voiceState.value) {
-            VoiceState.Idle -> {
-                _voiceNote.value = null
-                if (recorder.start()) _voiceState.value = VoiceState.Recording
-                else _voiceNote.value = "Couldn't open the microphone."
-            }
-            VoiceState.Recording -> sendVoice()
-            else -> {}  // mid-turn — nothing sensible to toggle
-        }
-    }
-
-    private fun sendVoice() = viewModelScope.launch {
-        val wav = withContext(Dispatchers.IO) { recorder.stop() }
-        if (wav == null) {
-            _voiceState.value = VoiceState.Idle  // fumbled tap — too short to be speech
-            return@launch
-        }
-        _voiceState.value = VoiceState.Thinking
-        val (base, tok, _) = prefs.config()
-        val result = runCatching {
-            withContext(Dispatchers.IO) { Net.voice(base, tok, wav) }
-        }.getOrElse { e ->
-            _voiceNote.value = "Voice failed: ${e.message?.take(80) ?: "can't reach the brain"}"
-            _voiceState.value = VoiceState.Idle
-            return@launch
-        }
-        if (!result.ok) {
-            _voiceNote.value = "Didn't catch that — try again?"
-            _voiceState.value = VoiceState.Idle
-            return@launch
-        }
-        val tts = result.ttsId?.let { id ->
-            withContext(Dispatchers.IO) { runCatching { Net.fetchTts(base, tok, id) }.getOrNull() }
-        }
-        if (tts == null) {
-            _voiceState.value = VoiceState.Idle  // reply text still lands via the exchange frame
-            return@launch
-        }
-        _voiceState.value = VoiceState.Speaking
-        TtsPlayer.play(getApplication(), tts) { _voiceState.value = VoiceState.Idle }
-    }
+    fun toggleVoice() = VoiceSession.toggle(getApplication())
 
     fun sendChat(text: String) {
         if (text.isBlank()) return

@@ -1,0 +1,125 @@
+package io.github.garemat.crumpet.ui
+
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.drawable.Icon
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.util.Rational
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.ComponentActivity
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import io.github.garemat.crumpet.R
+import io.github.garemat.crumpet.audio.VoiceSession
+import io.github.garemat.crumpet.audio.VoiceState
+import io.github.garemat.crumpet.data.Prefs
+import kotlinx.coroutines.launch
+
+/** Full-screen Crumpet: a WebView on the brain's own `GET /face` (the SAME animated face
+ *  the desk shells use), fed live by the state WS. Leaving the app drops it into native
+ *  picture-in-picture — Crumpet floats over Maps/whatever, with a PiP mic action driving
+ *  the shared [VoiceSession] — and a tap expands him back. Design: car-mode.md. */
+class FaceActivity : ComponentActivity() {
+
+    companion object {
+        private const val ACTION_PTT = "io.github.garemat.crumpet.PTT"
+        // The brain's state WS (GATEWAY_WS_PORT default). The face page connects itself
+        // via its ?ws=…&token=… params; auth is the device's GATEWAY_WS_TOKENS entry.
+        private const val STATE_WS_PORT = 8800
+    }
+
+    private var web: WebView? = null
+
+    private val ptt = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // Mic permission is granted from the chat screen's mic button; without it the
+            // session surfaces its note there. PiP can't walk a permission dialog.
+            VoiceSession.toggle(context)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ContextCompat.registerReceiver(this, ptt, IntentFilter(ACTION_PTT),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+
+        // Edge-to-edge, no bars, screen held awake — it's a face on a dash/desk mount.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        val view = WebView(this).apply {
+            settings.javaScriptEnabled = true   // the face IS a JS animation
+            settings.domStorageEnabled = true
+            webViewClient = WebViewClient()     // keep navigation in-view
+            setBackgroundColor(android.graphics.Color.BLACK)
+        }
+        web = view
+        setContentView(view)
+
+        lifecycleScope.launch {
+            val (base, token, _) = Prefs(this@FaceActivity).config()
+            val host = Uri.parse(base).host
+            if (base.isBlank() || host == null) {
+                finish()  // not paired — nothing to show
+                return@launch
+            }
+            view.loadUrl("$base/face?ws=$host:$STATE_WS_PORT/ws&token=$token")
+        }
+
+        applyPipParams(VoiceSession.state.value)
+        lifecycleScope.launch {
+            // Keep the PiP action's icon honest (mic ↔ stop) as the session moves.
+            VoiceSession.state.collect { applyPipParams(it) }
+        }
+    }
+
+    /** Auto-enter on API 31+; onUserLeaveHint covers older devices. */
+    private fun applyPipParams(state: VoiceState) {
+        val icon = if (state == VoiceState.Recording) R.drawable.ic_pip_stop else R.drawable.ic_pip_mic
+        val label = if (state == VoiceState.Recording) "Stop and send" else "Talk to Crumpet"
+        val action = RemoteAction(
+            Icon.createWithResource(this, icon), label, label,
+            PendingIntent.getBroadcast(
+                this, 0,
+                Intent(ACTION_PTT).setPackage(packageName),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ),
+        )
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(1, 1))
+            .setActions(listOf(action))
+            .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setAutoEnterEnabled(true) }
+            .build()
+        setPictureInPictureParams(params)
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            enterPictureInPictureMode(PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(1, 1)).build())
+        }
+    }
+
+    override fun onDestroy() {
+        unregisterReceiver(ptt)
+        web?.destroy()
+        web = null
+        super.onDestroy()
+    }
+}
