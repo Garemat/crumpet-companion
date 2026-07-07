@@ -67,6 +67,13 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
   and bounded-restarts the ear on an unexpected stop.
 - Voice timing (the "gap" audit): `adb logcat -s VoiceTiming` shows the client half (capture ms,
   send→reply, tts fetch); the brain logs the server half (stt/think/tts/total) via `crumpet-brain.sh logs`.
+- Conversation mode: one "hey crumpet" opens a back-and-forth — `HandsFreeLoop.converse` captures the
+  first utterance, then FOLLOW-UPS with no wake word until the user is silent for the follow-up window
+  OR the brain says the chat's closed. Ending policy is SHARED brain-side (`core/conversation.py`): the
+  `/voice` reply carries `end_conversation` (true on a stop phrase like "no follow up"), which the loop
+  reads via `VoiceSession.lastTurnEndedConversation`. Silence endpointing stays LOCAL (zero latency) —
+  only the deliberate stop consults the brain. `VoiceSession.sendWav` sets Thinking synchronously so the
+  loop can wait out each turn without touching the mic (the freeze guard).
 - Device actions: `{"type":"action","id","verb",…}` in → `push/ActionRunner.kt` (the
   AUTHORITATIVE verb allowlist: `navigate` builds `google.navigation:`/`geo:` URIs from a plain
   place string, `media` sends media-key events; unknown verbs refused) → honest

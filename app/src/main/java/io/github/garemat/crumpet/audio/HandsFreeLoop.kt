@@ -24,9 +24,13 @@ class HandsFreeLoop(private val context: Context) {
         private const val SAMPLE_RATE = 16000
         private const val SILENCE_MEAN_ABS = 0.015f * 32768f  // satellite SILENCE_THRESHOLD
         private const val SILENCE_STOP_MS = 1300L    // quiet this long after speech = done
-        private const val SPEECH_WAIT_MS = 6000L     // woke but said nothing = stand down
+        private const val SPEECH_WAIT_MS = 6000L     // first utterance: woke but said nothing = stand down
+        private const val FOLLOWUP_WAIT_MS = 8000L   // follow-up: silence this long ends the chat (brain's FOLLOWUP_WINDOW)
         private const val UTTERANCE_CAP_MS = 15000L  // satellite UTTERANCE_TIMEOUT
         private const val ECHO_TAIL_MS = 1000L       // deaf period after Crumpet's own voice
+        private const val MAX_TURNS = 12             // matches conversation.MAX_TURNS
+        private const val TURN_TIMEOUT_MS = 120000L  // give up waiting on a stuck turn
+        private const val SETTLE_MS = 400L           // let audio settle before listening for a follow-up
     }
 
     private var thread: Thread? = null
@@ -116,8 +120,7 @@ class HandsFreeLoop(private val context: Context) {
                 if (n == chunk.size && detector.accept(chunk)) {
                     Log.d("VoiceTiming", "wake detected")
                     chirp()
-                    val wav = capture(record, chunk)
-                    if (wav != null) VoiceSession.sendWav(context, wav)
+                    converse(record, chunk)  // the whole back-and-forth, until silence or "no follow up"
                     detector.reset()
                 }
             }
@@ -129,10 +132,32 @@ class HandsFreeLoop(private val context: Context) {
         }
     }
 
-    /** Post-wake capture with the satellite path's endpointing: wait for speech (or give
-     *  up), then stop after a silence gap, hard-capped. Returns WAV, or null for a false
-     *  wake that never turned into speech. */
-    private fun capture(record: AudioRecord, chunk: ShortArray): ByteArray? {
+    /** One wake word opens a whole conversation (like the desk screens): the first utterance,
+     *  then follow-ups with NO wake word, until the user goes quiet for the follow-up window
+     *  or the brain's shared policy says they closed it ("no follow up"). Runs on the loop
+     *  thread; the mic isn't read during a turn (that's the freeze guard). */
+    private fun converse(record: AudioRecord, chunk: ShortArray) {
+        for (t in 0 until MAX_TURNS) {
+            if (!running) return
+            val speechWait = if (t == 0) SPEECH_WAIT_MS else FOLLOWUP_WAIT_MS
+            val wav = capture(record, chunk, speechWait) ?: return  // silence → conversation over
+            VoiceSession.sendWav(context, wav)
+            // Wait out the turn WITHOUT touching the mic (playback holds audio focus).
+            val waitStart = SystemClock.elapsedRealtime()
+            while (running && VoiceSession.state.value != VoiceState.Idle &&
+                SystemClock.elapsedRealtime() - waitStart < TURN_TIMEOUT_MS
+            ) {
+                Thread.sleep(50)
+            }
+            if (!running || VoiceSession.lastTurnEndedConversation) return  // stop phrase / miss / error
+            Thread.sleep(SETTLE_MS)  // let Crumpet's audio tail settle before we listen again
+        }
+    }
+
+    /** Post-wake capture with the satellite path's endpointing: wait for speech up to
+     *  [speechWaitMs] (or give up — a false wake / an ended conversation), then stop after a
+     *  silence gap, hard-capped. Returns WAV, or null when no speech came. */
+    private fun capture(record: AudioRecord, chunk: ShortArray, speechWaitMs: Long): ByteArray? {
         _listening.value = true
         val pcm = ByteArrayOutputStream()
         val started = SystemClock.elapsedRealtime()
@@ -142,7 +167,7 @@ class HandsFreeLoop(private val context: Context) {
             while (running) {
                 val now = SystemClock.elapsedRealtime()
                 if (now - started > UTTERANCE_CAP_MS) break
-                if (!heardSpeech && now - started > SPEECH_WAIT_MS) return null
+                if (!heardSpeech && now - started > speechWaitMs) return null
                 val n = record.read(chunk, 0, chunk.size)
                 if (n <= 0) break
                 var sum = 0L
