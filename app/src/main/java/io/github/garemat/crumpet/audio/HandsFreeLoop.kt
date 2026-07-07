@@ -7,6 +7,7 @@ import android.media.AudioRecord
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.SystemClock
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.ByteArrayOutputStream
@@ -35,10 +36,21 @@ class HandsFreeLoop(private val context: Context) {
     private val _listening = MutableStateFlow(false)
     val listening = _listening.asStateFlow()
 
+    // If hands-free can't start (mic held by another app, model load failure, missing native
+    // lib on this device…) it must NEVER take the face down with it — the loop swallows every
+    // throwable, disables itself, and reports the reason here so FaceActivity can surface it
+    // instead of the app just vanishing.
+    private val _error = MutableStateFlow<String?>(null)
+    val error = _error.asStateFlow()
+
     fun start() {
         if (running) return
         running = true
-        thread = Thread(::loop, "crumpet-handsfree").apply { start() }
+        _error.value = null
+        thread = Thread(::run, "crumpet-handsfree").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     fun stop() {
@@ -48,26 +60,41 @@ class HandsFreeLoop(private val context: Context) {
         _listening.value = false
     }
 
+    /** Thread entry: the outermost guard. Any failure — model load, native lib, the mic being
+     *  unavailable — is caught here, so a broken ear can only ever mean "no hands-free", never
+     *  a crash. */
+    private fun run() {
+        try {
+            loop()
+        } catch (t: Throwable) {
+            Log.e("HandsFree", "wake word loop stopped", t)
+            _error.value = t.message?.take(120) ?: t.javaClass.simpleName
+            running = false
+            _listening.value = false
+        }
+    }
+
     @SuppressLint("MissingPermission")  // FaceActivity only starts the loop when granted
     private fun loop() {
         val minBuf = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
         )
-        val record = runCatching {
-            AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                maxOf(minBuf, SAMPLE_RATE),
-            )
-        }.getOrNull() ?: return
+        val record = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+            maxOf(minBuf, SAMPLE_RATE),
+        )
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             record.release()
-            return
+            throw IllegalStateException("microphone unavailable")
         }
-        val detector = WakeWordDetector(context)
-        val chunk = ShortArray(WakeWordDetector.CHUNK_SAMPLES)
-        var mutedUntil = 0L
+        // Build the detector only after the mic is secured, and tear BOTH down together — a
+        // half-built loop (models loaded, mic dead, or vice-versa) must leak neither.
+        var detector: WakeWordDetector? = null
         try {
+            detector = WakeWordDetector(context)
+            val chunk = ShortArray(WakeWordDetector.CHUNK_SAMPLES)
+            var mutedUntil = 0L
             record.startRecording()
             while (running) {
                 val n = record.read(chunk, 0, chunk.size)
@@ -90,7 +117,7 @@ class HandsFreeLoop(private val context: Context) {
         } finally {
             runCatching { record.stop() }
             record.release()
-            detector.close()
+            detector?.close()
             _listening.value = false
         }
     }

@@ -122,10 +122,16 @@ class WakeWordDetector(context: Context, private val threshold: Float = 0.5f) {
     }
 
     private fun interpreter(context: Context, asset: String): Interpreter {
-        val bytes = context.assets.open(asset).use { it.readBytes() }
-        val buf = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder())
-        buf.put(bytes)
-        buf.rewind()
-        return Interpreter(buf, Interpreter.Options().setNumThreads(1))
+        // Name the failing stage — a bare TFLite/UnsatisfiedLinkError message alone doesn't
+        // say which of the three models (or the native runtime) is the problem.
+        try {
+            val bytes = context.assets.open(asset).use { it.readBytes() }
+            val buf = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder())
+            buf.put(bytes)
+            buf.rewind()
+            return Interpreter(buf, Interpreter.Options().setNumThreads(1))
+        } catch (t: Throwable) {
+            throw IllegalStateException("$asset: ${t.message ?: t.javaClass.simpleName}", t)
+        }
     }
 }

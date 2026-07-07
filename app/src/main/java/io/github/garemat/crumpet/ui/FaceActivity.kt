@@ -114,6 +114,14 @@ class FaceActivity : ComponentActivity() {
                 )
             }
         }
+        lifecycleScope.launch {
+            // If the ear couldn't start, the face still works as a display — just say so once.
+            loop.error.collect { msg ->
+                if (msg != null) android.widget.Toast.makeText(
+                    this@FaceActivity, "Hands-free off: $msg", android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
     }
 
     private fun stopHandsFree() {
