@@ -31,6 +31,14 @@ object VoiceSession {
     private val _note = MutableStateFlow<String?>(null)
     val note = _note.asStateFlow()
 
+    // The last turn's outcome, read by HandsFreeLoop once the turn is done: did the brain's
+    // shared policy say the conversation is over (a stop phrase), or did the turn fail? Either
+    // way the loop stops chaining follow-ups. Set true up-front and cleared only on a clean,
+    // continuing turn, so a crash mid-turn defaults to "stop" rather than a runaway loop.
+    @Volatile
+    private var _endConversation = false
+    val lastTurnEndedConversation: Boolean get() = _endConversation
+
     /** First tap records, second tap sends. The finished turn's chat lines arrive via the
      *  `exchange` frame (the brain doesn't skip the asker for /voice — this surface writes
      *  no chat lines itself). Callers gate this behind the RECORD_AUDIO grant. */
@@ -61,6 +69,8 @@ object VoiceSession {
      *  actually holds speech; the loop's endpointing guarantees that. */
     fun sendWav(context: Context, wav: ByteArray) {
         if (_state.value != VoiceState.Idle) return
+        _endConversation = true                 // pessimistic until a turn completes cleanly
+        _state.value = VoiceState.Thinking      // set here (sync) so a waiting loop sees non-Idle at once
         scope.launch { turn(context.applicationContext, wav) }
     }
 
@@ -81,8 +91,9 @@ object VoiceSession {
         if (!result.ok) {
             _note.value = "Didn't catch that — try again?"
             _state.value = VoiceState.Idle
-            return
+            return  // _endConversation stays true — don't chain a follow-up after a miss
         }
+        _endConversation = result.endConversation  // brain's shared policy decides
         val tts = result.ttsId?.let { id ->
             withContext(Dispatchers.IO) { runCatching { Net.fetchTts(base, tok, id) }.getOrNull() }
         }

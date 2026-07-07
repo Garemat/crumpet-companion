@@ -41,6 +41,9 @@ data class VoiceResult(
     val reply: String? = null,
     @SerialName("tts_id") val ttsId: String? = null,
     val error: String? = null,
+    // The brain's shared conversation policy said the user closed the chat ("no follow up").
+    // The hands-free loop stands down instead of waiting out the follow-up window.
+    @SerialName("end_conversation") val endConversation: Boolean = false,
 )
 
 // ---- chat gateway frames (mirror crumpet/gateway/chat_ws.py) ----
