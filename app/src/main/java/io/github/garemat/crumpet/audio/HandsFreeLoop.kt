@@ -92,6 +92,9 @@ class HandsFreeLoop(private val context: Context) {
             record.release()
             throw IllegalStateException("microphone unavailable")
         }
+        // Music from the phone's own speaker swamps the wake word — cancel our playback
+        // out of the capture (covers the converse() follow-ups too: same session).
+        val effects = CaptureEffects.attach(record, "ear")
         // Build the detector only after the mic is secured, and tear BOTH down together — a
         // half-built loop (models loaded, mic dead, or vice-versa) must leak neither.
         var detector: WakeWordDetector? = null
@@ -126,6 +129,7 @@ class HandsFreeLoop(private val context: Context) {
             }
         } finally {
             runCatching { record.stop() }
+            CaptureEffects.release(effects)
             record.release()
             detector?.close()
             _listening.value = false
