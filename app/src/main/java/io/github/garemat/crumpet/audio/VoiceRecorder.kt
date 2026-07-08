@@ -18,6 +18,7 @@ class VoiceRecorder {
     }
 
     private var record: AudioRecord? = null
+    private var effects: List<android.media.audiofx.AudioEffect> = emptyList()
     private var worker: Thread? = null
     private val buffer = ByteArrayOutputStream()
 
@@ -38,6 +39,9 @@ class VoiceRecorder {
             rec.release()
             return false
         }
+        // Speaking over the phone's own music: cancel our playback out of the capture so
+        // Whisper gets the voice, not the mix (same fix as the wake-word ear).
+        effects = CaptureEffects.attach(rec, "ptt")
         buffer.reset()
         rec.startRecording()
         record = rec
@@ -60,6 +64,8 @@ class VoiceRecorder {
         worker?.join(1000)
         worker = null
         runCatching { rec.stop() }
+        CaptureEffects.release(effects)
+        effects = emptyList()
         rec.release()
         val pcm = synchronized(buffer) { buffer.toByteArray() }
         buffer.reset()
