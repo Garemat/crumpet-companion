@@ -111,5 +111,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.tensorflow.lite)
 
+    // Spotify App Remote (wake_spotify action) — vendored AAR; Spotify doesn't publish
+    // it to Maven (github.com/spotify/android-sdk releases). Gson is its wire dep.
+    implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
+    implementation(libs.gson)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

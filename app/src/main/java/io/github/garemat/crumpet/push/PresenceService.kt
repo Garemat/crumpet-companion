@@ -99,10 +99,14 @@ class PresenceService : Service() {
                     // A device action ("let's head to work" → navigate). Runs here because this
                     // collector is the one that's alive whenever the WS is — and the ack must be
                     // honest, so any failure (unknown verb, no handler, backgrounded) nacks.
+                    // Launched so a slow verb (wake_spotify's service bind) can't stall the
+                    // collector and delay pushes/files behind it.
                     frame.type == "action" -> frame.actionId?.let { id ->
-                        val ok = runCatching { ActionRunner.run(applicationContext, frame) }
-                            .getOrDefault(false)
-                        Net.ackAction(id, ok)
+                        scope.launch {
+                            val ok = runCatching { ActionRunner.run(applicationContext, frame) }
+                                .getOrDefault(false)
+                            Net.ackAction(id, ok)
+                        }
                     }
                 }
             }
