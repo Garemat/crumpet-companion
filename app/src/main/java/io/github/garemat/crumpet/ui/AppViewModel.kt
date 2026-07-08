@@ -16,6 +16,7 @@ import io.github.garemat.crumpet.audio.VoiceSession
 import io.github.garemat.crumpet.health.CalendarRepo
 import io.github.garemat.crumpet.health.HealthRepo
 import io.github.garemat.crumpet.net.Net
+import io.github.garemat.crumpet.push.SpotifyWake
 import io.github.garemat.crumpet.update.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,6 +56,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val activity = _activity.asStateFlow()
     private val _syncMsg = MutableStateFlow<String?>(null)
     val syncMsg = _syncMsg.asStateFlow()
+
+    private val _spotifyMsg = MutableStateFlow<String?>(null)
+    val spotifyMsg = _spotifyMsg.asStateFlow()
     // PTT lives in the app-scoped VoiceSession (the face activity's PiP action shares it).
     val voiceState = VoiceSession.state
     val voiceNote = VoiceSession.note
@@ -181,6 +185,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleVoice() = VoiceSession.toggle(getApplication())
+
+    /** One-time Spotify App Remote approval (Setup screen) — after this, the brain's
+     *  wake_spotify action can wake Spotify silently in the background. */
+    fun connectSpotify() = viewModelScope.launch {
+        _spotifyMsg.value = "Connecting to Spotify…"
+        val err = SpotifyWake.connect(getApplication(), showAuth = true)
+        _spotifyMsg.value = err
+            ?: "Connected — Crumpet can now wake Spotify on this phone."
+    }
 
     fun sendChat(text: String) {
         if (text.isBlank()) return

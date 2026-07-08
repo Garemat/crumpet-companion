@@ -18,9 +18,11 @@
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
-    <!-- Discover the Health Connect app + its permissions UI -->
+    <!-- Discover the Health Connect app + its permissions UI, and Spotify (App Remote
+         binds its service for the wake_spotify action — package visibility, API 30+) -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <package android:name="com.spotify.music" />
         <intent>
             <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
         </intent>

@@ -57,6 +57,7 @@ fun SetupScreen(
     val ghSaved by vm.ghToken.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val syncMsg by vm.syncMsg.collectAsStateWithLifecycle()
+    val spotifyMsg by vm.spotifyMsg.collectAsStateWithLifecycle()
 
     var url by remember(savedUrl) { mutableStateOf(savedUrl) }
     var token by remember(savedToken) { mutableStateOf(savedToken) }
@@ -110,6 +111,20 @@ fun SetupScreen(
             Spacer(Modifier.height(10.dp))
             OutlinedButton(onClick = onRequestOther, modifier = Modifier.fillMaxWidth()) {
                 Text("Grant calendar & notifications", color = Jade)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("Spotify", color = Cream, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Lets Crumpet wake Spotify here so this phone shows up as a playback device",
+                color = Faint, fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = { vm.connectSpotify() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Connect Spotify (one-time)", color = Jade)
+            }
+            spotifyMsg?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = if (it.startsWith("Connected")) Ok else Muted, fontSize = 12.sp)
             }
         }
 

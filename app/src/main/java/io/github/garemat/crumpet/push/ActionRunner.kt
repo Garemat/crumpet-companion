@@ -16,10 +16,15 @@ import io.github.garemat.crumpet.data.InFrame
  *  boring — each new verb re-runs the threat paragraph in the design doc. */
 object ActionRunner {
 
-    /** Returns whether the action actually ran — the honest bit the ack carries. */
-    fun run(context: Context, frame: InFrame): Boolean = when (frame.verb) {
+    /** Returns whether the action actually ran — the honest bit the ack carries.
+     *  Suspend because wake_spotify waits on an async service bind; the sync verbs
+     *  are unaffected. */
+    suspend fun run(context: Context, frame: InFrame): Boolean = when (frame.verb) {
         "navigate" -> navigate(context, frame.query.orEmpty())
         "media" -> media(context, frame.control.orEmpty())
+        // Zero-payload by design: binds Spotify's App Remote service so its process wakes
+        // and registers as a Connect device, then disconnects. No data, no UI, no launch.
+        "wake_spotify" -> SpotifyWake.wake(context)
         else -> false  // not in the table — refused, acked ok=false
     }
 
