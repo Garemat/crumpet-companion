@@ -143,3 +143,89 @@ data class WorkoutLine(val title: String, val detail: String, val source: String
 
 /** A calendar event for the agenda strip / "Up next". */
 data class AgendaItem(val title: String, val startMillis: Long, val allDay: Boolean)
+
+// ---- calendar (brain-mediated: GET/POST/DELETE /calendar…; crumpet docs/backlog/calendar.md) ----
+
+/** One server-expanded event instance from GET /calendar, cached locally so the Calendar
+ *  screen works offline. Times are the brain's local-naive ISO strings ("2026-07-16T18:00:00",
+ *  or "2026-07-16" for all-day) — lexicographic order IS chronological order, all-day first.
+ *  Recurring events appear as one row per occurrence sharing a [uid]; [pending] is local-only
+ *  (a queued create not yet on the brain). */
+@Serializable
+data class CalEvent(
+    val uid: String,
+    val summary: String,
+    val start: String? = null,
+    val end: String? = null,
+    @SerialName("all_day") val allDay: Boolean = false,
+    val notes: String = "",
+    val recurring: Boolean = false,
+    @SerialName("recurrence_id") val recurrenceId: String? = null,
+    val pending: Boolean = false,
+)
+
+/** The instance's calendar day — every start form begins "YYYY-MM-DD". */
+fun CalEvent.day(): java.time.LocalDate? =
+    runCatching { java.time.LocalDate.parse(start?.take(10)) }.getOrNull()
+
+/** "HH:MM" for timed events (fixed ISO positions — tolerant of a trailing offset), "" all-day. */
+fun CalEvent.timeLabel(): String =
+    if (allDay || start == null || start.length < 16 || 'T' !in start) "" else start.substring(11, 16)
+
+/** Epoch millis of the instance start in the system zone (brain times are home-local naive;
+ *  a DAVx5-era event may carry an offset — both parse). Null when absent/unparseable. */
+fun CalEvent.startMillis(): Long? {
+    val s = start ?: return null
+    val zone = java.time.ZoneId.systemDefault()
+    return runCatching { java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli() }
+        .recoverCatching { java.time.LocalDateTime.parse(s).atZone(zone).toInstant().toEpochMilli() }
+        .recoverCatching {
+            java.time.LocalDate.parse(s.take(10)).atStartOfDay(zone).toInstant().toEpochMilli()
+        }
+        .getOrNull()
+}
+
+@Serializable
+data class CalendarListResponse(val ok: Boolean = false, val days: Int = 0,
+                                val events: List<CalEvent> = emptyList())
+
+/** A queued calendar mutation (persisted outbox, same model as the chat outbox).
+ *  [kind] = "create" | "delete". The app generates [uid] — the brain saves PUT-by-uid,
+ *  so a replayed create overwrites instead of duplicating. [start] uses the brain's
+ *  tool format: "YYYY-MM-DD HH:MM", or "YYYY-MM-DD" for all-day. */
+@Serializable
+data class CalMutation(
+    val id: Long,
+    val kind: String,
+    val uid: String,
+    val summary: String = "",
+    val start: String = "",
+    val end: String = "",
+    val allDay: Boolean = false,
+    val notes: String = "",
+    val repeat: String = "",
+    val repeatDays: List<String> = emptyList(),
+    val repeatUntil: String = "",
+) {
+    /** The optimistic row shown (pending) until the brain confirms it into the cache. */
+    fun toCalEvent() = CalEvent(
+        uid = uid, summary = summary,
+        start = if (allDay || " " !in start) start else start.replace(" ", "T") + ":00",
+        allDay = allDay, notes = notes, recurring = repeat.isNotBlank() || repeatDays.isNotEmpty(),
+        pending = true,
+    )
+}
+
+/** POST /calendar/event body — field names are the brain's endpoint contract. */
+@Serializable
+data class CalCreateBody(
+    val uid: String,
+    val summary: String,
+    val start: String,
+    val end: String = "",
+    @SerialName("all_day") val allDay: Boolean = false,
+    val notes: String = "",
+    val repeat: String = "",
+    @SerialName("repeat_days") val repeatDays: List<String> = emptyList(),
+    @SerialName("repeat_until") val repeatUntil: String = "",
+)

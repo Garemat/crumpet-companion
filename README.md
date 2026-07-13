@@ -14,8 +14,10 @@ feeds it to Crumpet's brain, is a native **chat** face, and surfaces Crumpet's p
 - **Chat** — talk to Crumpet over the same gateway WebSocket the web face uses (`/chat`, token-authed).
 - **Push (self-hosted)** — a foreground service holds the gateway connection open so Crumpet's morning
   brief / post-gym check-ins arrive as notifications. **No Firebase.**
-- **Calendar** — a read-only agenda glance / "Up next" from the system calendar (which DAVx5 syncs from
-  Crumpet's Radicale). Adds still flow through the brain.
+- **Calendar** — a full calendar view + quick-add (title/time/notes/repeats) backed by an
+  **offline-first cache**: renders from local state, queued writes drain to the brain's
+  `GET/POST/DELETE /calendar…` endpoints when the VPN's reachable (idempotent by client uid).
+  Radicale via the brain is the single source of truth — no DAVx5, no system-calendar access.
 
 Design: a warm "cozy-dapper" theme (espresso + brass + jade, Fraunces × Hanken) — the dapper turtle.
 
@@ -33,16 +35,16 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## First-run setup (in the app → Settings)
 1. **Connect:** enter the brain URL (e.g. `https://crumpet` via the Caddy edge, or `http://<tunnel-ip>:8810`)
    and a **device token** — add an entry to the brain's `CHAT_WS_TOKENS` keychain secret, e.g. `phone:<secret>`.
-2. **Grant Health Connect** (nutrition/body/activity/sleep) and **calendar + notifications**.
+2. **Grant Health Connect** (nutrition/body/activity/sleep) and **notifications**.
 3. **Save & connect** — starts the presence service. **Sync now** to pull your history.
 
 ## Layout
 - `net/Net.kt` — the brain I/O: ingest POST + the resilient chat/push WebSocket.
 - `health/HealthRepo.kt` — Health Connect reads → ingest records + today snapshot.
-- `health/CalendarRepo.kt` — read-only system-calendar agenda.
 - `sync/SyncWorker.kt` — periodic Health Connect → brain sync (watermark + dedup).
+- `sync/CalendarSync.kt` — calendar outbox drain + cache-window refresh (offline-first).
 - `push/PresenceService.kt` — foreground connection → notifications.
-- `ui/` — Compose theme, the turtle avatar, and the Home / Chat / Health / Setup screens.
+- `ui/` — Compose theme, the turtle avatar, and the Home / Calendar / Chat / Health / Setup screens.
 
 Brain side (in the Crumpet repo): `crumpet/gateway/chat_ws.py` (`/health/ingest` + `push()`),
 `crumpet/core/health_ingest.py`. See `docs/backlog/phone-companion.md` there.
