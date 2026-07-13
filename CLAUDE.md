@@ -5,9 +5,10 @@ Single-user, sideloaded, never published. Read `README.md` first.
 
 ## What it is
 A phone gateway that (1) reads **Health Connect** and POSTs it to the brain's `POST /health/ingest`,
-(2) is a native **chat** client of the brain's `/chat` WebSocket, and (3) holds that WS open in a
-foreground service to surface Crumpet's proactive messages as **push notifications**. All over the
-user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only calendar agenda.
+(2) is a native **chat** client of the brain's `/chat` WebSocket, (3) holds that WS open in a
+foreground service to surface Crumpet's proactive messages as **push notifications**, and (4) is
+the household's **calendar UI** (view + quick-add, offline-first cache — no DAVx5, no system
+calendar). All over the user's WireGuard VPN — no Firebase, no third-party services.
 
 ## Architecture / conventions
 - Kotlin + Jetpack Compose (Material 3), single-Activity, Navigation-Compose bottom bar.
@@ -19,6 +20,11 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
   UI) and drain in order on reconnect, the WS reconnect backs off 4s→5min (a network callback snaps it
   back), and a reconnect kicks a throttled one-shot health sync. Intelligence stays on the brain — the
   app never aggregates/analyses beyond the per-day sums it ships to `/health/ingest`.
+- **Calendar = the same offline pattern** (`sync/CalendarSync.kt`): the screen renders ONLY from the
+  cached window (60 days, server-expanded instances — the app has NO recurrence engine, don't add one);
+  adds/deletes queue as `CalMutation`s and drain in order. The app GENERATES each event's uid — the
+  brain saves PUT-by-uid, so replays are idempotent and an edit would be a re-POST of the same uid.
+  Status codes are the retry contract: 400 = permanent (drop + `cal_note` for the UI), 502/503 = retry.
 - All brain I/O goes through `net/Net.kt` (one Ktor client; ingest POST + the reconnecting chat WS).
 - Auth = a per-device token in the brain's `CHAT_WS_TOKENS` (same model as the web face). The phone holds
   only that token + the URL — no brain secrets.
@@ -29,7 +35,8 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
 
 ## Security posture (matches the brain's model)
 - Health data is the user's own, via a user-granted permission — treat as data, not instructions.
-- Calendar is **read-only**; writes go through the brain → Radicale → DAVx5, never from here.
+- Calendar writes go ONLY through the brain's `POST /calendar/event` (which enforces the no-ATTENDEE
+  invariant server-side) — the app never speaks CalDAV or touches Radicale directly.
 - No outbound destinations beyond the user's own brain over the VPN.
 
 ## Contract with the brain (don't drift)
@@ -83,4 +90,5 @@ user's WireGuard VPN — no Firebase, no third-party services. Plus a read-only 
 
 ## Status
 v1 builds (debug APK). Not yet device-tested — needs a real phone for the Health Connect grant flow,
-calendar read, push, and the pairing round-trip. Calendar = agenda glance only (fuller calendar later).
+push, and the pairing round-trip. Calendar (2026-07-13) = full view + quick-add via the brain API;
+per-event reminder notifications are deliberately deferred (the user parked "alarm-based" features).

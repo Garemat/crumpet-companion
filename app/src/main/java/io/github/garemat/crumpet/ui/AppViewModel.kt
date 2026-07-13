@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.garemat.crumpet.data.AgendaItem
+import io.github.garemat.crumpet.data.CalEvent
+import io.github.garemat.crumpet.data.CalMutation
 import io.github.garemat.crumpet.data.ChatLine
 import io.github.garemat.crumpet.data.FileInbox
 import io.github.garemat.crumpet.data.HealthSnapshot
@@ -12,27 +14,31 @@ import io.github.garemat.crumpet.data.InboxFile
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.data.QueuedMsg
 import io.github.garemat.crumpet.data.SentImage
+import io.github.garemat.crumpet.data.day
+import io.github.garemat.crumpet.data.startMillis
 import io.github.garemat.crumpet.audio.VoiceSession
-import io.github.garemat.crumpet.health.CalendarRepo
 import io.github.garemat.crumpet.health.HealthRepo
 import io.github.garemat.crumpet.net.Net
 import io.github.garemat.crumpet.push.SpotifyWake
+import io.github.garemat.crumpet.sync.CalendarSyncWorker
 import io.github.garemat.crumpet.update.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = Prefs(app)
     val health = HealthRepo(app)
-    val calendar = CalendarRepo(app)
 
     val serverUrl: StateFlow<String> =
         prefs.serverUrl.stateIn(viewModelScope, SharingStarted.Eagerly, "")
@@ -43,8 +49,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _snapshot = MutableStateFlow(HealthSnapshot())
     val snapshot = _snapshot.asStateFlow()
-    private val _agenda = MutableStateFlow<List<AgendaItem>>(emptyList())
-    val agenda = _agenda.asStateFlow()
+
+    // The Calendar screen's list: the synced cache overlaid with the queued outbox — pending
+    // creates show immediately (marked), pending deletes hide their rows. Renders identically
+    // offline; CalendarSync refreshes the cache underneath and the flows recompose.
+    val calEvents: StateFlow<List<CalEvent>> =
+        combine(prefs.calEvents, prefs.calOutboxFlow) { cache, outbox ->
+            val hidden = outbox.filter { it.kind == "delete" }.map { it.uid }.toSet()
+            val queued = outbox.filter { it.kind == "create" }
+            val queuedUids = queued.map { it.uid }.toSet()
+            val today = LocalDate.now()
+            (cache.filter { it.uid !in hidden && it.uid !in queuedUids } +
+                queued.map { it.toCalEvent() })
+                .filter { (it.day() ?: today) >= today }  // synced-away past days age out visually
+                .sortedWith(compareBy({ it.start == null }, { it.start ?: "" }))
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val calLastSync: StateFlow<Long> =
+        prefs.calLastSync.stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
+    val calNote: StateFlow<String> =
+        prefs.calNote.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    // Home's "Up next" strip — this week, straight from the same cache (no more OS provider).
+    val agenda: StateFlow<List<AgendaItem>> = calEvents.map { events ->
+        val weekEnd = LocalDate.now().plusDays(7)
+        val now = System.currentTimeMillis()
+        events.filter { (it.day() ?: weekEnd) <= weekEnd }
+            .mapNotNull { e ->
+                val at = e.startMillis() ?: return@mapNotNull null
+                // keep an in-progress timed event visible for an hour; all-day all day
+                if (!e.allDay && at < now - 3_600_000L) null else AgendaItem(e.summary, at, e.allDay)
+            }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _chat = MutableStateFlow<List<ChatLine>>(emptyList())
     val chat = _chat.asStateFlow()
     private val _thinking = MutableStateFlow(false)
@@ -150,8 +185,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() = viewModelScope.launch {
         _snapshot.value = withContext(Dispatchers.IO) { runCatching { health.todaySnapshot() }.getOrDefault(HealthSnapshot()) }
-        _agenda.value = withContext(Dispatchers.IO) { runCatching { calendar.upcoming(7) }.getOrDefault(emptyList()) }
+        CalendarSyncWorker.kick(getApplication())  // cache renders regardless; this freshens it
     }
+
+    // --- calendar writes: persist to the outbox FIRST (optimistic row appears via the flows),
+    // then kick the sync — same persist-then-wake pattern as sendChat. The uid is OURS so the
+    // brain's PUT-by-uid makes any replay idempotent. ---
+
+    fun addCalendarEvent(
+        summary: String, start: String, end: String = "", allDay: Boolean = false,
+        notes: String = "", repeat: String = "", repeatDays: List<String> = emptyList(),
+        repeatUntil: String = "",
+    ) {
+        if (summary.isBlank() || start.isBlank()) return
+        val id = System.currentTimeMillis()
+        viewModelScope.launch {
+            prefs.addToCalOutbox(
+                CalMutation(
+                    id = id, kind = "create", uid = "$id-${java.util.UUID.randomUUID()}@crumpet-app",
+                    summary = summary.trim(), start = start, end = end, allDay = allDay,
+                    notes = notes.trim(), repeat = repeat, repeatDays = repeatDays,
+                    repeatUntil = repeatUntil,
+                ),
+            )
+            CalendarSyncWorker.kick(getApplication())
+        }
+    }
+
+    /** Removes the event (a recurring uid removes the whole series — the sheet warns). A queued
+     *  not-yet-synced create is simply pulled back out of the outbox instead. */
+    fun deleteCalendarEvent(uid: String) = viewModelScope.launch {
+        val queued = prefs.calOutbox().firstOrNull { it.kind == "create" && it.uid == uid }
+        if (queued != null) {
+            prefs.removeFromCalOutbox(queued.id)
+        } else {
+            prefs.addToCalOutbox(CalMutation(id = System.currentTimeMillis(), kind = "delete", uid = uid))
+            CalendarSyncWorker.kick(getApplication())
+        }
+    }
+
+    fun clearCalNote() = viewModelScope.launch { prefs.setCalNote("") }
 
     fun syncNow() = viewModelScope.launch {
         _syncMsg.value = "Syncing…"

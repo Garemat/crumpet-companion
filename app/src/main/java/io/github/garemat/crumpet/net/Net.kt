@@ -1,6 +1,8 @@
 package io.github.garemat.crumpet.net
 
 import io.github.garemat.crumpet.data.AttachResult
+import io.github.garemat.crumpet.data.CalCreateBody
+import io.github.garemat.crumpet.data.CalendarListResponse
 import io.github.garemat.crumpet.data.HealthRecord
 import io.github.garemat.crumpet.data.InFrame
 import io.github.garemat.crumpet.data.IngestBatch
@@ -17,12 +19,14 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.request.delete
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
@@ -72,6 +76,41 @@ object Net {
             contentType(ContentType.Application.Json)
             setBody(IngestBatch(records))
         }.body()
+    }
+
+    // ---- calendar (brain-mediated CalDAV; crumpet docs/backlog/calendar.md phase 2) ----
+    // The write calls speak the brain's outbox contract: 200 → done, 400 → the brain
+    // PERMANENTLY rejected it (return the reason; the caller drops the mutation), anything
+    // else (offline, 502 Radicale down, 503 unconfigured) → throw, the sync retries later.
+
+    suspend fun calendarList(base: String, token: String, days: Int): CalendarListResponse {
+        val resp = client.get("$base/calendar?days=$days") { header("X-Crumpet-Token", token) }
+        if (resp.status.value != 200) throw IllegalStateException("calendar read ${resp.status.value}")
+        return resp.body()
+    }
+
+    /** Returns null on success, the brain's reason when permanently rejected, throws when retryable. */
+    suspend fun calendarCreate(base: String, token: String, body: CalCreateBody): String? {
+        val resp = client.post("$base/calendar/event") {
+            header("X-Crumpet-Token", token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        return when (resp.status.value) {
+            200 -> null
+            400 -> resp.bodyAsText().take(200).ifBlank { "the brain refused it" }
+            else -> throw IllegalStateException("calendar write ${resp.status.value}")
+        }
+    }
+
+    /** Same contract as [calendarCreate]; deleting an already-gone uid is a 200 on the brain. */
+    suspend fun calendarDelete(base: String, token: String, uid: String): String? {
+        val resp = client.delete("$base/calendar/event/$uid") { header("X-Crumpet-Token", token) }
+        return when (resp.status.value) {
+            200 -> null
+            400 -> resp.bodyAsText().take(200).ifBlank { "the brain refused it" }
+            else -> throw IllegalStateException("calendar delete ${resp.status.value}")
+        }
     }
 
     // ---- attachment (photo / PDF / doc) → /attach ----

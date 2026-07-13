@@ -20,6 +20,7 @@ import io.github.garemat.crumpet.R
 import io.github.garemat.crumpet.data.FileInbox
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.net.Net
+import io.github.garemat.crumpet.sync.CalendarSyncWorker
 import io.github.garemat.crumpet.sync.SyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,9 +69,14 @@ class PresenceService : Service() {
             launch {
                 // On each reconnect, kick a health sync (throttled inside syncOnce) rather than
                 // waiting up to 3h for the periodic worker — data lands right after downtime.
+                // Calendar rides the same signal: queued adds/deletes drain the moment the
+                // brain is reachable again, and the cache window refreshes.
                 var wasConnected = false
                 Net.connected.collect { now ->
-                    if (now && !wasConnected) SyncWorker.syncOnce(applicationContext)
+                    if (now && !wasConnected) {
+                        SyncWorker.syncOnce(applicationContext)
+                        CalendarSyncWorker.kick(applicationContext)
+                    }
                     wasConnected = now
                 }
             }

@@ -106,11 +106,11 @@ fun SetupScreen(
                 Text("Grant Health Connect", color = Jade)
             }
             Spacer(Modifier.height(12.dp))
-            Text("Calendar & notifications", color = Cream, style = MaterialTheme.typography.titleMedium)
-            Text("Read your agenda · receive Crumpet's nudges", color = Faint, fontSize = 11.sp)
+            Text("Notifications", color = Cream, style = MaterialTheme.typography.titleMedium)
+            Text("Receive Crumpet's nudges", color = Faint, fontSize = 11.sp)
             Spacer(Modifier.height(10.dp))
             OutlinedButton(onClick = onRequestOther, modifier = Modifier.fillMaxWidth()) {
-                Text("Grant calendar & notifications", color = Jade)
+                Text("Grant notifications", color = Jade)
             }
             Spacer(Modifier.height(12.dp))
             Text("Spotify", color = Cream, style = MaterialTheme.typography.titleMedium)
