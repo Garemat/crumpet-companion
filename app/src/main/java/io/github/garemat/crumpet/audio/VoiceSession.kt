@@ -3,6 +3,7 @@ package io.github.garemat.crumpet.audio
 import android.content.Context
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.net.Net
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -83,7 +84,13 @@ object VoiceSession {
         val result = runCatching {
             withContext(Dispatchers.IO) { Net.voice(base, tok, wav) }
         }.getOrElse { e ->
-            _note.value = "Voice failed: ${e.message?.take(80) ?: "can't reach the brain"}"
+            // A timeout isn't a failure: the brain finishes the turn anyway and the reply
+            // lands in chat via its exchange frame — only the spoken audio is lost. Common
+            // while a game holds the GPU (cold partial-CPU loads, turns queueing).
+            _note.value = if (e is HttpRequestTimeoutException)
+                "Taking me a while — the answer will land in chat when it's ready."
+            else
+                "Voice failed: ${e.message?.take(80) ?: "can't reach the brain"}"
             _state.value = VoiceState.Idle
             return
         }
