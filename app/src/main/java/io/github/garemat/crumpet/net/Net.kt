@@ -121,9 +121,11 @@ object Net {
         if (base.isBlank()) return AttachResult(false, "Not paired.")
         return client.post("$base/attach") {
             // Vision can swap the model in + infer — give it room (default read timeout is ~10s).
+            // Game mode stretches this further: every model load is cold + partial-CPU, and a
+            // turn can queue behind another (e.g. a PDF ingest), so 3 minutes wasn't enough.
             timeout {
-                requestTimeoutMillis = 180_000
-                socketTimeoutMillis = 180_000
+                requestTimeoutMillis = 300_000
+                socketTimeoutMillis = 300_000
                 connectTimeoutMillis = 30_000
             }
             header("X-Crumpet-Token", token)
@@ -150,8 +152,8 @@ object Net {
         return client.post("$base/voice") {
             // STT + a full brain turn + TTS — same generous window as /attach.
             timeout {
-                requestTimeoutMillis = 180_000
-                socketTimeoutMillis = 180_000
+                requestTimeoutMillis = 300_000
+                socketTimeoutMillis = 300_000
                 connectTimeoutMillis = 30_000
             }
             header("X-Crumpet-Token", token)
