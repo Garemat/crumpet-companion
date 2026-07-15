@@ -206,10 +206,28 @@ object Net {
             onRate(resp.headers["X-Sample-Rate"]?.toIntOrNull() ?: 24_000)
             val channel = resp.bodyAsChannel()
             val buf = ByteArray(16_384)
+            // 16-bit alignment: network reads land on arbitrary byte boundaries, and
+            // handing an ODD length to AudioTrack splits a sample — every sample after
+            // it is byte-shifted garbage (LOUD static) until another odd read
+            // rebalances. Carry the odd tail byte into the next chunk instead.
+            var carry = -1
             while (true) {
-                val n = channel.readAvailable(buf, 0, buf.size)
-                if (n == -1) break
-                if (n > 0) onChunk(buf, n)
+                var off = 0
+                if (carry >= 0) {
+                    buf[0] = carry.toByte()
+                    off = 1
+                    carry = -1
+                }
+                val n = channel.readAvailable(buf, off, buf.size - off)
+                if (n == -1) {
+                    break  // a dangling half-sample at EOF is dropped by design
+                }
+                var len = off + n
+                if (len % 2 != 0) {
+                    carry = buf[len - 1].toInt()
+                    len -= 1
+                }
+                if (len > 0) onChunk(buf, len)
             }
         }
     }
