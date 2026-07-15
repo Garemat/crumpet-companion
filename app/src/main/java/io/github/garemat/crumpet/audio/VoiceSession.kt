@@ -24,6 +24,10 @@ object VoiceSession {
     private val recorder = VoiceRecorder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    // The in-flight turn, so interrupt() can cancel speech that hasn't started yet.
+    @Volatile
+    private var turnJob: kotlinx.coroutines.Job? = null
+
     private val _state = MutableStateFlow(VoiceState.Idle)
     val state = _state.asStateFlow()
 
@@ -51,17 +55,38 @@ object VoiceSession {
                 else _note.value = "Couldn't open the microphone."
             }
             VoiceState.Recording -> send(context.applicationContext)
-            else -> {}  // mid-turn — nothing sensible to toggle
+            // Barge-in-lite: a tap while Crumpet is speaking shuts him up (the reply
+            // text is already in the chat thread). Next tap records as normal.
+            VoiceState.Speaking -> interrupt()
+            else -> {}  // Thinking — nothing sensible to toggle
         }
     }
 
-    private fun send(app: Context) = scope.launch {
-        val wav = withContext(Dispatchers.IO) { recorder.stop() }
-        if (wav == null) {
-            _state.value = VoiceState.Idle  // fumbled tap — too short to be speech
-            return@launch
+    /** Stop whatever is being spoken RIGHT NOW and don't speak the rest — the mic-tap
+     *  barge-in and the "user swiped the app away" path (PresenceService.onTaskRemoved:
+     *  the service process outlives the UI, so without this a long reply keeps talking
+     *  to an empty room — field report 2026-07-15). Cancels the in-flight turn coroutine
+     *  too, so a stream that hasn't produced audio yet can't start after the swipe; the
+     *  brain finishes its turn regardless and the text lands via the exchange frame.
+     *  Safe from any thread/state. */
+    fun interrupt() {
+        turnJob?.cancel()
+        turnJob = null
+        if (_state.value == VoiceState.Recording) recorder.stop()  // drop the capture — mic off
+        TtsPlayer.stop()
+        PcmStreamPlayer.stop()
+        _state.value = VoiceState.Idle
+    }
+
+    private fun send(app: Context) {
+        turnJob = scope.launch {
+            val wav = withContext(Dispatchers.IO) { recorder.stop() }
+            if (wav == null) {
+                _state.value = VoiceState.Idle  // fumbled tap — too short to be speech
+                return@launch
+            }
+            turn(app, wav)
         }
-        turn(app, wav)
     }
 
     /** Run a turn from an already-captured WAV — the hands-free loop's entry (it does its
@@ -72,7 +97,7 @@ object VoiceSession {
         if (_state.value != VoiceState.Idle) return
         _endConversation = true                 // pessimistic until a turn completes cleanly
         _state.value = VoiceState.Thinking      // set here (sync) so a waiting loop sees non-Idle at once
-        scope.launch { turn(context.applicationContext, wav) }
+        turnJob = scope.launch { turn(context.applicationContext, wav) }
     }
 
     private suspend fun turn(app: Context, wav: ByteArray) {
@@ -84,6 +109,10 @@ object VoiceSession {
         val result = runCatching {
             withContext(Dispatchers.IO) { Net.voice(base, tok, wav, stream = true) }
         }.getOrElse { e ->
+            // A deliberate interrupt() — die quietly, never surface a note for it.
+            // (runCatching swallows CancellationException; rethrowing keeps the
+            // coroutine's cancellation semantics honest.)
+            if (e is kotlinx.coroutines.CancellationException) throw e
             // A timeout isn't a failure: the brain finishes the turn anyway and the reply
             // lands in chat via its exchange frame — only the spoken audio is lost. Common
             // while a game holds the GPU (cold partial-CPU loads, turns queueing).
@@ -106,7 +135,11 @@ object VoiceSession {
             return
         }
         val tts = result.ttsId?.let { id ->
-            withContext(Dispatchers.IO) { runCatching { Net.fetchTts(base, tok, id) }.getOrNull() }
+            withContext(Dispatchers.IO) {
+                runCatching { Net.fetchTts(base, tok, id) }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                    .getOrNull()
+            }
         }
         val ttsFetch = android.os.SystemClock.elapsedRealtime() - t0 - roundTrip
         android.util.Log.d(
@@ -155,6 +188,7 @@ object VoiceSession {
             }
         }
         outcome.onFailure { e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e  // interrupt() — die quietly
             android.util.Log.w("VoiceSession", "TTS stream failed: ${e.message}")
             _note.value = if (firstAudioMs < 0)
                 "Taking me a while — the answer will land in chat when it's ready."
