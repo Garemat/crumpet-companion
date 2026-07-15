@@ -82,7 +82,7 @@ object VoiceSession {
         // flagged. `adb logcat -s VoiceTiming` shows the whole chain across both halves.
         val t0 = android.os.SystemClock.elapsedRealtime()
         val result = runCatching {
-            withContext(Dispatchers.IO) { Net.voice(base, tok, wav) }
+            withContext(Dispatchers.IO) { Net.voice(base, tok, wav, stream = true) }
         }.getOrElse { e ->
             // A timeout isn't a failure: the brain finishes the turn anyway and the reply
             // lands in chat via its exchange frame — only the spoken audio is lost. Common
@@ -101,6 +101,10 @@ object VoiceSession {
             return  // _endConversation stays true — don't chain a follow-up after a miss
         }
         _endConversation = result.endConversation  // brain's shared policy decides
+        if (result.stream && result.ttsId != null) {
+            streamedReply(app, base, tok, result.ttsId, t0)
+            return
+        }
         val tts = result.ttsId?.let { id ->
             withContext(Dispatchers.IO) { runCatching { Net.fetchTts(base, tok, id) }.getOrNull() }
         }
@@ -127,6 +131,42 @@ object VoiceSession {
                 _state.value = VoiceState.Idle
             }
         }
+    }
+
+    /** A sentence-streamed reply (brain answered `stream: true`): the turn is still
+     *  GENERATING on the brain — GET /tts/<id> feeds PCM chunks to the track as sentences
+     *  synthesize, so speech starts seconds after STT instead of after the whole reply.
+     *  Stays Thinking until the first audible chunk, then Speaking until the stream ends
+     *  AND the track drains. Reply text lands via the exchange frame, same as ever.
+     *  On stream failure the reply text still lands — same posture as a lost WAV fetch. */
+    private suspend fun streamedReply(app: Context, base: String, tok: String, id: String, t0: Long) {
+        var firstAudioMs = -1L
+        val outcome = runCatching {
+            withContext(Dispatchers.IO) {
+                Net.streamTts(base, tok, id,
+                    onRate = { rate -> PcmStreamPlayer.begin(app, rate) },
+                    onChunk = { buf, len ->
+                        if (firstAudioMs < 0) {
+                            firstAudioMs = android.os.SystemClock.elapsedRealtime() - t0
+                            _state.value = VoiceState.Speaking
+                        }
+                        PcmStreamPlayer.write(buf, len)
+                    })
+            }
+        }
+        outcome.onFailure { e ->
+            android.util.Log.w("VoiceSession", "TTS stream failed: ${e.message}")
+            _note.value = if (firstAudioMs < 0)
+                "Taking me a while — the answer will land in chat when it's ready."
+            else null  // it spoke partially; the chat thread has the full text
+        }
+        PcmStreamPlayer.drain()  // bounded by the audio's own length — can't wedge the turn
+        android.util.Log.d(
+            "VoiceTiming",
+            "streamed: first audio=${if (firstAudioMs < 0) "none" else "${firstAudioMs}ms"}, " +
+                "turn done=${android.os.SystemClock.elapsedRealtime() - t0}ms",
+        )
+        _state.value = VoiceState.Idle
     }
 
     /** Duration of a 16-bit mono WAV from its header (sample rate at offset 24). A rough
