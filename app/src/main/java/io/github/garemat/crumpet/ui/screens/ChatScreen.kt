@@ -51,6 +51,7 @@ import io.github.garemat.crumpet.data.ChatLine
 import io.github.garemat.crumpet.audio.VoiceState
 import io.github.garemat.crumpet.ui.AppViewModel
 import io.github.garemat.crumpet.ui.components.CrumpetAvatar
+import io.github.garemat.crumpet.ui.inlineMarkdown
 import io.github.garemat.crumpet.ui.theme.Bg2
 import io.github.garemat.crumpet.ui.theme.Bg3
 import io.github.garemat.crumpet.ui.theme.Brass
@@ -331,7 +332,9 @@ private fun Bubble(line: ChatLine, onFileTap: (ChatLine) -> Unit = {}) {
                     if (line.text.isNotBlank()) Spacer(Modifier.height(8.dp))
                 }
                 if (line.text.isNotBlank()) {
-                    Text(line.text, color = Cream, fontSize = 13.5.sp)
+                    // Rendered, not raw: Crumpet bolds/bullets his replies and the
+                    // asterisks used to show as text. Inline-only markdown.
+                    Text(inlineMarkdown(line.text), color = Cream, fontSize = 13.5.sp)
                 }
                 // Light source label on the user's lines from OTHER channels ("via discord",
                 // "via voice:desk") — the one thread shows where each turn happened.
