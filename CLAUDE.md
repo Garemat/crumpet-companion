@@ -48,9 +48,13 @@ calendar). All over the user's WireGuard VPN — no Firebase, no third-party ser
   thread live; the brain never sends us our own WS `message` turns, so no dedupe is needed. Our own
   PTT voice turns DO come back as `exchange` (source `app-voice`) by design — the voice surface
   writes no chat lines itself, so that frame is what lands them in the thread).
-- Voice (PTT): WAV → `POST /voice` → `{ok, heard, reply, tts_id}`; Kokoro audio via `GET /tts/<id>`
-  (ephemeral, 5-min TTL — fetch promptly). `audio/VoiceRecorder.kt` captures 16kHz mono PCM16;
-  `audio/TtsPlayer.kt` plays with transient-may-duck focus (music dips, car BT works as-is).
+- Voice (PTT): WAV → `POST /voice?stream=pcm` → `{ok, heard, tts_id, stream: true}` returned right
+  after STT; `GET /tts/<id>` is then chunked raw PCM16 mono (`X-Sample-Rate`) whose bytes arrive
+  WHILE the brain generates — `audio/PcmStreamPlayer.kt` plays them live (AudioTrack MODE_STREAM,
+  same transient-may-duck focus). Reply TEXT arrives via the exchange frame only. An OLD brain
+  ignores `?stream` and answers the legacy blocking shape `{ok, heard, reply, tts_id}` with whole-WAV
+  audio — `VoiceResult.stream` picks the path, keep both working. `audio/VoiceRecorder.kt` captures
+  16kHz mono PCM16; `audio/TtsPlayer.kt` (MediaPlayer, whole WAV) stays for the legacy path.
   The state machine is the app-scoped `audio/VoiceSession.kt` — chat mic and the face PiP action
   share it. Design: `docs/backlog/car-mode.md` in the Crumpet repo.
 - Full-screen face (`ui/FaceActivity.kt`): a WebView on the brain's `GET /face` (the same

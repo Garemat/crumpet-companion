@@ -25,13 +25,16 @@ import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.readAvailable
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.channels.Channel
@@ -147,9 +150,14 @@ object Net {
     }
 
     // ---- voice turn (PTT WAV) → /voice; reply audio ← /tts/<id> ----
-    suspend fun voice(base: String, token: String, wav: ByteArray): VoiceResult {
+    /** [stream]=true asks the brain for the sentence-streamed contract (?stream=pcm):
+     *  the response returns right after STT and the tts id plays live via streamTts.
+     *  An old brain ignores the query and answers the blocking WAV shape — VoiceResult
+     *  tells them apart, so the caller degrades transparently. */
+    suspend fun voice(base: String, token: String, wav: ByteArray, stream: Boolean = false): VoiceResult {
         if (base.isBlank()) return VoiceResult(false, error = "Not paired.")
-        return client.post("$base/voice") {
+        val url = if (stream) "$base/voice?stream=pcm" else "$base/voice"
+        return client.post(url) {
             // STT + a full brain turn + TTS — same generous window as /attach.
             timeout {
                 requestTimeoutMillis = 300_000
@@ -172,6 +180,39 @@ object Net {
             }
             header("X-Crumpet-Token", token)
         }.body()
+
+    /** Play a sentence-streamed reply as it synthesizes: GET /tts/<id> on a ?stream=pcm
+     *  turn is chunked raw PCM16 mono whose bytes arrive WHILE the brain generates.
+     *  [onRate] fires once with the sample rate (header, sent with the first sentence);
+     *  [onChunk] gets each buffer as it lands. Returns when the brain finishes the reply.
+     *  The response headers can take as long as the turn's first sentence (minutes if a
+     *  game holds the GPU and the brain degrades to whole-reply synthesis), so the
+     *  request window matches /voice; the socket window only bounds mid-reply stalls. */
+    suspend fun streamTts(
+        base: String,
+        token: String,
+        id: String,
+        onRate: suspend (Int) -> Unit,
+        onChunk: suspend (ByteArray, Int) -> Unit,
+    ) {
+        client.prepareGet("$base/tts/$id") {
+            timeout {
+                requestTimeoutMillis = 300_000
+                socketTimeoutMillis = 120_000
+                connectTimeoutMillis = 30_000
+            }
+            header("X-Crumpet-Token", token)
+        }.execute { resp ->
+            onRate(resp.headers["X-Sample-Rate"]?.toIntOrNull() ?: 24_000)
+            val channel = resp.bodyAsChannel()
+            val buf = ByteArray(16_384)
+            while (true) {
+                val n = channel.readAvailable(buf, 0, buf.size)
+                if (n == -1) break
+                if (n > 0) onChunk(buf, n)
+            }
+        }
+    }
 
     // ---- files Crumpet offers (a {"type":"file"} frame carries the id; this gets the bytes) ----
     suspend fun fetchFile(base: String, token: String, id: String): ByteArray =

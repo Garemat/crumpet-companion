@@ -33,13 +33,18 @@ data class IngestResult(val ok: Boolean = false, val counts: Map<String, Int> = 
 data class AttachResult(val ok: Boolean = false, val reply: String = "")
 
 /** POST /voice response. [ok]=false + [error] covers the brain's junk-transcript guard
- *  ("nothing heard"); [ttsId] is null when synthesis failed (text reply still stands). */
+ *  ("nothing heard"); [ttsId] is null when synthesis failed (text reply still stands).
+ *  [stream]=true (a `?stream=pcm` turn on a new-enough brain) means the response came
+ *  back BEFORE the brain turn ran: [reply] is absent (the text lands via the exchange
+ *  frame) and [ttsId] is a live raw-PCM stream that starts mid-generation — play it
+ *  with PcmStreamPlayer, not the WAV path. An old brain never sets it (default false). */
 @Serializable
 data class VoiceResult(
     val ok: Boolean = false,
     val heard: String = "",
     val reply: String? = null,
     @SerialName("tts_id") val ttsId: String? = null,
+    val stream: Boolean = false,
     val error: String? = null,
     // The brain's shared conversation policy said the user closed the chat ("no follow up").
     // The hands-free loop stands down instead of waiting out the follow-up window.
