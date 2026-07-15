@@ -224,7 +224,11 @@ object Net {
                 }
                 var len = off + n
                 if (len % 2 != 0) {
-                    carry = buf[len - 1].toInt()
+                    // `and 0xFF`: Byte.toInt() sign-extends, and a carried byte >= 0x80
+                    // would read as negative — colliding with the -1 "no carry" sentinel
+                    // and getting DROPPED, which flips the alignment permanently (the
+                    // "static got worse" report, 2026-07-16). Keep carry in 0..255.
+                    carry = buf[len - 1].toInt() and 0xFF
                     len -= 1
                 }
                 if (len > 0) onChunk(buf, len)
