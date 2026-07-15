@@ -17,6 +17,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import io.github.garemat.crumpet.MainActivity
 import io.github.garemat.crumpet.R
+import io.github.garemat.crumpet.audio.VoiceSession
 import io.github.garemat.crumpet.data.FileInbox
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.net.Net
@@ -118,6 +119,15 @@ class PresenceService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    /** The user swiped the app out of recents. This process (the WS foreground service)
+     *  survives that, and so would a reply mid-playback — a long answer kept talking to
+     *  an empty room (field report 2026-07-15). Swiping the app away is as clear a
+     *  "stop talking" as exists; the reply text is in the chat thread either way. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        VoiceSession.interrupt()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
