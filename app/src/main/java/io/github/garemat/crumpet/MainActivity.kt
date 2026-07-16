@@ -32,6 +32,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import io.github.garemat.crumpet.geo.PresenceWorker
 import io.github.garemat.crumpet.push.PresenceService
 import io.github.garemat.crumpet.sync.SyncWorker
 import io.github.garemat.crumpet.ui.AppViewModel
@@ -39,6 +40,7 @@ import io.github.garemat.crumpet.ui.screens.CalendarScreen
 import io.github.garemat.crumpet.ui.screens.ChatScreen
 import io.github.garemat.crumpet.ui.screens.HealthScreen
 import io.github.garemat.crumpet.ui.screens.HomeScreen
+import io.github.garemat.crumpet.ui.screens.PlacesScreen
 import io.github.garemat.crumpet.ui.screens.SetupScreen
 import io.github.garemat.crumpet.ui.theme.Brass
 import io.github.garemat.crumpet.ui.theme.Bg2
@@ -50,6 +52,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         SyncWorker.schedule(applicationContext)
+        PresenceWorker.schedule(applicationContext)
         setContent { CrumpetTheme { CrumpetApp() } }
     }
 }
@@ -118,9 +121,11 @@ private fun CrumpetApp(vm: AppViewModel = viewModel()) {
             composable(Dest.Health.route) { HealthScreen(vm) }
             composable(Dest.Calendar.route) { CalendarScreen(vm) }
             composable(Dest.Chat.route) { ChatScreen(vm) }
+            composable("places") { PlacesScreen() }
             composable(Dest.Setup.route) {
                 SetupScreen(
                     vm = vm,
+                    onOpenPlaces = { nav.navigate("places") },
                     onRequestHealth = { healthLauncher.launch(vm.health.permissions) },
                     onRequestOther = {
                         grantLauncher.launch(

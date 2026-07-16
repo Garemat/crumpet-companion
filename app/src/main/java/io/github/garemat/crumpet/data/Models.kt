@@ -29,6 +29,13 @@ data class IngestBatch(val records: List<HealthRecord>)
 @Serializable
 data class IngestResult(val ok: Boolean = false, val counts: Map<String, Int> = emptyMap())
 
+/** POST /presence body/response — events are geo.PresenceEvent (labels + town only). */
+@Serializable
+data class PresenceBatch(val events: List<io.github.garemat.crumpet.geo.PresenceEvent>)
+
+@Serializable
+data class PresenceResult(val ok: Boolean = false, val counts: Map<String, Int> = emptyMap())
+
 @Serializable
 data class AttachResult(val ok: Boolean = false, val reply: String = "")
 

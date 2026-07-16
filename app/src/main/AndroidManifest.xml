@@ -8,6 +8,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- Presence: geofencing computed ON-DEVICE (geo/PresenceWorker) — coordinates never
+         leave the phone, only place labels. Background = the periodic check keeps working
+         with the app closed (Android gates it behind its own deliberate grant). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <!-- Health Connect: read-only, the four data families we sync -->
     <uses-permission android:name="android.permission.health.READ_NUTRITION" />
     <uses-permission android:name="android.permission.health.READ_WEIGHT" />
@@ -27,8 +34,10 @@
         </intent>
     </queries>
 
+    <!-- allowBackup=false: the brain token and (encrypted) geofence coordinates must never
+         ride a cloud backup off this device (crumpet docs/backlog/presence.md threat model). -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"

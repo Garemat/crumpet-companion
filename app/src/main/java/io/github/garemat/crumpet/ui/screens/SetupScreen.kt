@@ -46,6 +46,7 @@ import io.github.garemat.crumpet.ui.theme.Ok
 @Composable
 fun SetupScreen(
     vm: AppViewModel,
+    onOpenPlaces: () -> Unit,
     onRequestHealth: () -> Unit,
     onRequestOther: () -> Unit,
     onConnect: (String, String) -> Unit,
@@ -125,6 +126,22 @@ fun SetupScreen(
             spotifyMsg?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = if (it.startsWith("Connected")) Ok else Muted, fontSize = 12.sp)
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
+        Eyebrow("Presence")
+        Spacer(Modifier.height(10.dp))
+        SoftCard {
+            Text("Places & presence", color = Cream, style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Geofence your own places (Home/Office/Gym) so Crumpet knows where you are — " +
+                    "labels only, coordinates never leave the phone",
+                color = Faint, fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = onOpenPlaces, modifier = Modifier.fillMaxWidth()) {
+                Text("Manage places", color = Jade)
             }
         }
 
