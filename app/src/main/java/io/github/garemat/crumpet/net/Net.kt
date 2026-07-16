@@ -9,7 +9,10 @@ import io.github.garemat.crumpet.data.IngestBatch
 import io.github.garemat.crumpet.data.IngestResult
 import io.github.garemat.crumpet.data.OutMessage
 import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.data.PresenceBatch
+import io.github.garemat.crumpet.data.PresenceResult
 import io.github.garemat.crumpet.data.VoiceResult
+import io.github.garemat.crumpet.geo.PresenceEvent
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -79,6 +82,19 @@ object Net {
             contentType(ContentType.Application.Json)
             setBody(IngestBatch(records))
         }.body()
+    }
+
+    // ---- presence (coarse geofence labels; crumpet docs/backlog/presence.md) ----
+    /** Ship queued presence events. Throws on any failure so the caller's outbox holds. */
+    suspend fun presencePost(base: String, token: String, events: List<PresenceEvent>): PresenceResult {
+        if (base.isBlank() || events.isEmpty()) return PresenceResult(true)
+        val resp = client.post("$base/presence") {
+            header("X-Crumpet-Token", token)
+            contentType(ContentType.Application.Json)
+            setBody(PresenceBatch(events))
+        }
+        if (resp.status.value != 200) throw IllegalStateException("presence post ${resp.status.value}")
+        return resp.body()
     }
 
     // ---- calendar (brain-mediated CalDAV; crumpet docs/backlog/calendar.md phase 2) ----

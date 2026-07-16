@@ -20,6 +20,7 @@ import io.github.garemat.crumpet.R
 import io.github.garemat.crumpet.audio.VoiceSession
 import io.github.garemat.crumpet.data.FileInbox
 import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.geo.PresenceWorker
 import io.github.garemat.crumpet.net.Net
 import io.github.garemat.crumpet.sync.CalendarSyncWorker
 import io.github.garemat.crumpet.sync.SyncWorker
@@ -77,6 +78,8 @@ class PresenceService : Service() {
                     if (now && !wasConnected) {
                         SyncWorker.syncOnce(applicationContext)
                         CalendarSyncWorker.kick(applicationContext)
+                        // Presence events queued while the tunnel was down drain now too.
+                        PresenceWorker.kick(applicationContext)
                     }
                     wasConnected = now
                 }
@@ -163,6 +166,9 @@ class PresenceService : Service() {
                 .setAutoCancel(true)
                 .setContentIntent(openApp())
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                // Nudges can be presence-derived ("saw you leave the gym") — content stays
+                // off the lock screen (crumpet docs/backlog/presence.md threat model).
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .build()
             NotificationManagerCompat.from(this).notify(notifId, n)
         }

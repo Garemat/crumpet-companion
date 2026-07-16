@@ -6,9 +6,10 @@ Single-user, sideloaded, never published. Read `README.md` first.
 ## What it is
 A phone gateway that (1) reads **Health Connect** and POSTs it to the brain's `POST /health/ingest`,
 (2) is a native **chat** client of the brain's `/chat` WebSocket, (3) holds that WS open in a
-foreground service to surface Crumpet's proactive messages as **push notifications**, and (4) is
+foreground service to surface Crumpet's proactive messages as **push notifications**, (4) is
 the household's **calendar UI** (view + quick-add, offline-first cache — no DAVx5, no system
-calendar). All over the user's WireGuard VPN — no Firebase, no third-party services.
+calendar), and (5) computes **presence** on-device (geofenced places → labels to `POST /presence`).
+All over the user's WireGuard VPN — no Firebase, no third-party services.
 
 ## Architecture / conventions
 - Kotlin + Jetpack Compose (Material 3), single-Activity, Navigation-Compose bottom bar.
@@ -90,6 +91,18 @@ calendar). All over the user's WireGuard VPN — no Firebase, no third-party ser
   place string, `media` sends media-key events; unknown verbs refused) → honest
   `{"type":"action_ack","id","ok"}` back (navigate nacks when the app isn't visible — Android
   silently drops background activity starts). Never execute a URI/intent from the wire.
+- Presence (`geo/`): the user's places (Home/Office/Gym) live ONLY on the phone — encrypted at
+  rest with a Keystore key (`PlacesStore.SealedBox`) and `allowBackup=false` keeps them (and the
+  token) out of cloud backups. `PresenceWorker` (15-min WorkManager + kicks on open/reconnect/
+  places-edit) takes ONE platform-LocationManager fix, classifies it in `PresenceCheck` (pure,
+  unit-tested: enter at radius, exit at radius×1.6 hysteresis, a >200 m-accuracy fix can never
+  prove an exit), geocodes a town only when leaving somewhere (guarded — a degoogled phone may
+  have no geocoder → bare "away"), queues `{state,label,area,at}` events in a persisted outbox
+  and drains them to `POST /presence` (batch; shape = crumpet `core/presence.py`). DELIBERATELY
+  not Play services' GeofencingClient — the user chose a fully local implementation; don't
+  "upgrade" it. Pause switch + places UI: `ui/screens/PlacesScreen.kt` (from Settings). Push
+  notifications are `VISIBILITY_PRIVATE` (presence-derived nudges stay off the lock screen).
+  Coordinates NEVER cross the wire; threat model: crumpet `docs/backlog/presence.md`.
 - Design + rationale: `docs/backlog/phone-companion.md` in the Crumpet repo.
 
 ## Status
