@@ -5,4 +5,14 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">10.99.0.1</domain>
     </domain-config>
+    <!-- The Caddy TLS edge (`https://crumpet/app/…`) is signed by Caddy's INTERNAL CA, whose
+         root is installed on the phone as a USER certificate. Android trusts user certs only
+         when the app opts in — scoped to this one hostname; everything else stays system-CA. -->
+    <domain-config>
+        <domain includeSubdomains="false">crumpet</domain>
+        <trust-anchors>
+            <certificates src="user" />
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>

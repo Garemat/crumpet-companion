@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.Home
@@ -36,6 +37,7 @@ import io.github.garemat.crumpet.geo.PresenceWorker
 import io.github.garemat.crumpet.push.PresenceService
 import io.github.garemat.crumpet.sync.SyncWorker
 import io.github.garemat.crumpet.ui.AppViewModel
+import io.github.garemat.crumpet.ui.screens.AppsScreen
 import io.github.garemat.crumpet.ui.screens.CalendarScreen
 import io.github.garemat.crumpet.ui.screens.ChatScreen
 import io.github.garemat.crumpet.ui.screens.HealthScreen
@@ -62,6 +64,7 @@ private enum class Dest(val route: String, val label: String, val icon: ImageVec
     Health("health", "Health", Icons.Outlined.Favorite),
     Calendar("calendar", "Calendar", Icons.Outlined.CalendarMonth),
     Chat("chat", "Chat", Icons.AutoMirrored.Outlined.Chat),
+    Apps("apps", "Apps", Icons.Outlined.Apps),
     Setup("setup", "Settings", Icons.Outlined.Settings),
 }
 
@@ -121,6 +124,7 @@ private fun CrumpetApp(vm: AppViewModel = viewModel()) {
             composable(Dest.Health.route) { HealthScreen(vm) }
             composable(Dest.Calendar.route) { CalendarScreen(vm) }
             composable(Dest.Chat.route) { ChatScreen(vm) }
+            composable(Dest.Apps.route) { AppsScreen(vm) }
             composable("places") { PlacesScreen() }
             composable(Dest.Setup.route) {
                 SetupScreen(
