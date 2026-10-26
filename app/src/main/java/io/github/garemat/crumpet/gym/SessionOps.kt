@@ -76,6 +76,22 @@ object SessionOps {
             target = info?.target))
     }
 
+    /** Swap an exercise for another (machine taken, shoulder grumbling): same set
+     *  structure — warm-ups stay warm-ups, drops go (they were for the old kit) — re-filled
+     *  from the NEW exercise's target / last session, all unticked. Superset kept. */
+    fun replaceExercise(s: ActiveSession, exKey: Long, name: String, info: ExerciseInfo?): ActiveSession {
+        val base = nextKey(s)
+        return s.mapEx(exKey) { ex ->
+            val shape = ex.sets.filter { it.type != "drop" }.map { RoutineSet(it.type) }
+                .ifEmpty { listOf(RoutineSet(), RoutineSet(), RoutineSet()) }
+            val re = RoutineExercise(name, ex.superset, ex.restS, ex.repMin, ex.repMax, shape, target = info?.target)
+            ex.copy(
+                exercise = name, note = "", restS = info?.pref?.restS ?: ex.restS, target = info?.target,
+                sets = prefill(re, info).mapIndexed { i, set -> set.copy(key = base + i) },
+            )
+        }
+    }
+
     fun removeExercise(s: ActiveSession, exKey: Long) =
         s.copy(exercises = s.exercises.filterNot { it.key == exKey })
 

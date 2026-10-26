@@ -52,6 +52,7 @@ object GymSync {
 
         return try {
             store.saveState(Net.gymState(base, token))
+            store.saveHistory(Net.gymHistory(base, token))
             Net.gymLibrary(base, token, store.meta.value.libraryEtag)?.let { (etag, lib) ->
                 store.saveLibrary(lib, etag)
             }

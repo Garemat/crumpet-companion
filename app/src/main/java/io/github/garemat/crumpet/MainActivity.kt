@@ -37,7 +37,10 @@ import io.github.garemat.crumpet.geo.PresenceWorker
 import io.github.garemat.crumpet.push.PresenceService
 import io.github.garemat.crumpet.sync.SyncWorker
 import io.github.garemat.crumpet.ui.AppViewModel
+import io.github.garemat.crumpet.ui.gym.ExerciseHistoryScreen
 import io.github.garemat.crumpet.ui.gym.GymHomeScreen
+import io.github.garemat.crumpet.ui.gym.HistoryScreen
+import io.github.garemat.crumpet.ui.gym.SessionDetailScreen
 import io.github.garemat.crumpet.ui.gym.GymViewModel
 import io.github.garemat.crumpet.ui.gym.RoutineEditorScreen
 import io.github.garemat.crumpet.ui.gym.SessionScreen
@@ -145,12 +148,24 @@ private fun CrumpetApp(vm: AppViewModel = viewModel(), gym: GymViewModel = viewM
             composable("gym") {
                 GymHomeScreen(gym,
                     onSession = { nav.navigate("gym/session") { launchSingleTop = true } },
-                    onEditRoutine = { id -> nav.navigate("gym/routine/$id") })
+                    onEditRoutine = { id -> nav.navigate("gym/routine/$id") },
+                    onHistory = { nav.navigate("gym/history") })
             }
             composable("gym/session") {
                 SessionScreen(gym, onExit = {
                     nav.navigate("gym") { popUpTo("gym") { inclusive = true }; launchSingleTop = true }
-                })
+                }, onExercise = { name -> nav.navigate("gym/exercise/" + android.net.Uri.encode(name)) })
+            }
+            composable("gym/history") {
+                HistoryScreen(gym, onOpen = { key -> nav.navigate("gym/history/$key") })
+            }
+            composable("gym/history/{key}") { entry ->
+                SessionDetailScreen(gym, entry.arguments?.getString("key") ?: "",
+                    onExercise = { name -> nav.navigate("gym/exercise/" + android.net.Uri.encode(name)) })
+            }
+            composable("gym/exercise/{name}") { entry ->
+                ExerciseHistoryScreen(gym, entry.arguments?.getString("name") ?: "",
+                    onOpen = { key -> nav.navigate("gym/history/$key") })
             }
             composable("gym/routine/{id}") { entry ->
                 RoutineEditorScreen(gym, entry.arguments?.getString("id") ?: "new", onDone = { nav.popBackStack() })

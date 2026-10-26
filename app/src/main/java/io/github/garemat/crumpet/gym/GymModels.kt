@@ -184,3 +184,41 @@ data class GymOutboxItem(
     val body: String = "",
     val label: String = "",
 )
+
+// --- history (GET /gym/history) --------------------------------------------------
+
+@Serializable
+data class HistorySet(
+    val type: String = "working",
+    val weight: Double? = null,
+    val reps: Int,
+    @SerialName("drop_of") val dropOf: Int? = null,
+    val prs: List<String> = emptyList(),  // PRs this set set AT THE TIME
+)
+
+@Serializable
+data class HistoryExercise(
+    val exercise: String,
+    val superset: String? = null,
+    val note: String = "",
+    val sets: List<HistorySet> = emptyList(),
+)
+
+@Serializable
+data class HistorySession(
+    val id: Long = 0,
+    val uid: String? = null,
+    val title: String,
+    val source: String = "",
+    val at: String,                     // local "YYYY-MM-DD HH:MM"
+    @SerialName("duration_min") val durationMin: Int? = null,
+    val note: String = "",
+    val exercises: List<HistoryExercise> = emptyList(),
+    val pending: Boolean = false,       // phone-only: still in the outbox
+) {
+    /** Stable key for navigation: the brain's id, or the uid while still queued. */
+    val key: String get() = if (pending) "p-$uid" else id.toString()
+}
+
+@Serializable
+data class HistoryPage(val sessions: List<HistorySession> = emptyList(), val more: Boolean = false)

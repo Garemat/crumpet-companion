@@ -27,6 +27,7 @@ data class GymMeta(
  *  - state.json   — the brain's /gym/state snapshot, plus local optimistic edits
  *  - library.json — the exercise library (~800 KB, fetched once per ETag)
  *  - active.json  — the in-progress session, saved on EVERY change
+ *  - history.json — the newest page of past sessions (so History works offline)
  *  - outbox.json  — queued writes, drained in order by GymSync
  *  - rejected.json — sessions the brain REFUSED (400): never silently lost — a refusal
  *                    would most likely be a contract bug, and a workout is unrepeatable
@@ -40,11 +41,17 @@ class GymStore internal constructor(private val dir: File) {
     private val _outbox = MutableStateFlow(read("outbox.json") ?: emptyList<GymOutboxItem>())
     private val _meta = MutableStateFlow(read("meta.json") ?: GymMeta())
     private val _library = MutableStateFlow<Library?>(null)
+    private val _history = MutableStateFlow(read("history.json") ?: HistoryPage())
 
     val state: StateFlow<GymState> = _state.asStateFlow()
     val active: StateFlow<ActiveSession?> = _active.asStateFlow()
     val outbox: StateFlow<List<GymOutboxItem>> = _outbox.asStateFlow()
     val meta: StateFlow<GymMeta> = _meta.asStateFlow()
+    val history: StateFlow<HistoryPage> = _history.asStateFlow()
+
+    suspend fun saveHistory(page: HistoryPage) = lock.withLock {
+        _history.value = page; write("history.json", page)
+    }
 
     /** Loaded lazily — it's big and only the exercise picker needs it. */
     suspend fun library(): Library = lock.withLock {
