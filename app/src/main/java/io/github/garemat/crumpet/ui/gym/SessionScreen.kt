@@ -37,6 +37,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,7 +79,7 @@ import io.github.garemat.crumpet.ui.theme.Muted
  *  tick. Ticking judges PRs on the spot (offline), every edit is persisted immediately,
  *  and Finish hands the ticked sets to the outbox. */
 @Composable
-fun SessionScreen(vm: GymViewModel, onExit: () -> Unit) {
+fun SessionScreen(vm: GymViewModel, onExit: () -> Unit, onExercise: (String) -> Unit = {}) {
     val session by vm.active.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
@@ -109,7 +114,7 @@ fun SessionScreen(vm: GymViewModel, onExit: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(s.exercises, key = { it.key }) { ex ->
                 ExerciseCard(vm, ex, state.exercises[ex.exercise], first = ex.key == s.exercises.first().key,
-                    last = ex.key == s.exercises.last().key)
+                    last = ex.key == s.exercises.last().key, onHistory = { onExercise(ex.exercise) })
             }
             item {
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -164,8 +169,11 @@ private fun elapsed(ms: Long): String {
 }
 
 @Composable
-private fun ExerciseCard(vm: GymViewModel, ex: ActiveExercise, info: ExerciseInfo?, first: Boolean, last: Boolean) {
+private fun ExerciseCard(vm: GymViewModel, ex: ActiveExercise, info: ExerciseInfo?, first: Boolean, last: Boolean,
+                         onHistory: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
+    var replacing by remember { mutableStateOf(false) }
+    var confirmReplace by remember { mutableStateOf<String?>(null) }
     var editNote by remember { mutableStateOf(false) }
     var editPref by remember { mutableStateOf(false) }
     val sticky = info?.pref?.note.orEmpty()
@@ -179,7 +187,7 @@ private fun ExerciseCard(vm: GymViewModel, ex: ActiveExercise, info: ExerciseInf
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(Canon.pretty(ex.exercise), style = MaterialTheme.typography.titleLarge, color = Cream,
-                        modifier = Modifier.weight(1f, fill = false))
+                        modifier = Modifier.weight(1f, fill = false).clickable(onClick = onHistory))
                     ex.superset?.let {
                         Spacer(Modifier.width(8.dp))
                         Text("Superset $it", color = Jade, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
@@ -195,6 +203,10 @@ private fun ExerciseCard(vm: GymViewModel, ex: ActiveExercise, info: ExerciseInf
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "More", tint = Faint) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Bg3) {
+                    DropdownMenuItem(text = { Text("Replace exercise", color = Cream) },
+                        onClick = { menu = false; replacing = true })
+                    DropdownMenuItem(text = { Text("History", color = Cream) },
+                        onClick = { menu = false; onHistory() })
                     DropdownMenuItem(text = { Text("Note for today", color = Cream) },
                         onClick = { menu = false; editNote = true })
                     DropdownMenuItem(text = { Text("Exercise settings", color = Cream) },
@@ -224,7 +236,12 @@ private fun ExerciseCard(vm: GymViewModel, ex: ActiveExercise, info: ExerciseInf
                 "warmup" -> "W"; "drop" -> "D"; "failure" -> "F"
                 else -> (++workingNo).toString()
             }
-            SetRow(vm, ex, set, label, previous[i])
+            // key(): swipe state belongs to THIS set, not to whichever row sits at index i
+            key(set.key) {
+                SwipeToDelete(onDelete = { vm.edit { SessionOps.removeSet(it, ex.key, set.key) } }) {
+                    SetRow(vm, ex, set, label, previous[i])
+                }
+            }
         }
 
         Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
@@ -239,6 +256,26 @@ private fun ExerciseCard(vm: GymViewModel, ex: ActiveExercise, info: ExerciseInf
         }
     }
 
+    if (replacing) ExercisePicker(vm, onDismiss = { replacing = false }) { raw ->
+        replacing = false
+        if (ex.sets.any { it.done }) confirmReplace = raw else vm.replaceExercise(ex.key, raw)
+    }
+    confirmReplace?.let { raw ->
+        AlertDialog(
+            onDismissRequest = { confirmReplace = null }, containerColor = Bg3,
+            title = { Text("Replace ${Canon.pretty(ex.exercise)}?", color = Cream) },
+            text = { Text("Its ${ex.sets.count { it.done }} ticked sets won't be saved — add " +
+                "${Canon.pretty(Canon.lift(raw))} as a new exercise instead to keep them.", color = Muted) },
+            confirmButton = {
+                TextButton(onClick = { vm.replaceExercise(ex.key, raw); confirmReplace = null }) {
+                    Text("Replace", color = Coral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.addExercise(raw); confirmReplace = null }) { Text("Add instead", color = Brass) }
+            },
+        )
+    }
     if (editNote) TextDialog("Note for today", ex.note, onDismiss = { editNote = false }) { text ->
         vm.edit { SessionOps.editExercise(it, ex.key, note = text) }
     }
@@ -260,6 +297,24 @@ private fun matchPrevious(sets: List<ActiveSet>, last: List<LastSet>): List<Last
         val n = seen.getOrDefault(g, 0); seen[g] = n + 1
         pools[g]?.getOrNull(n)
     }
+}
+
+/** Swipe a set row left to delete it (the Hevy gesture); the coral strip says what'll happen. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit) {
+    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+        if (v == SwipeToDismissBoxValue.EndToStart) { onDelete(); true } else false
+    })
+    SwipeToDismissBox(
+        state = state, enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(Coral.copy(alpha = 0.85f))
+                .padding(end = 16.dp), contentAlignment = Alignment.CenterEnd) {
+                Text("Delete", color = Espresso, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        },
+    ) { Box(Modifier.background(Bg2)) { content() } }
 }
 
 @Composable

@@ -156,6 +156,19 @@ object Net {
         }
     }
 
+    /** A page of past sessions, newest first; [exercise] narrows to one lift. */
+    suspend fun gymHistory(base: String, token: String, before: String = "", limit: Int = 20,
+                           exercise: String = ""): io.github.garemat.crumpet.gym.HistoryPage {
+        val q = buildString {
+            append("limit=$limit")
+            if (before.isNotBlank()) append("&before=" + java.net.URLEncoder.encode(before, "UTF-8"))
+            if (exercise.isNotBlank()) append("&exercise=" + java.net.URLEncoder.encode(exercise, "UTF-8"))
+        }
+        val resp = client.get("$base/gym/history?$q") { header("X-Crumpet-Token", token) }
+        if (resp.status.value != 200) throw IllegalStateException("gym history ${resp.status.value}")
+        return json.decodeFromString(resp.bodyAsText())
+    }
+
     sealed interface GymWrite {
         data class Ok(val body: String) : GymWrite
         data class Refused(val reason: String) : GymWrite

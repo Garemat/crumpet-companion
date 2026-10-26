@@ -13,7 +13,14 @@ import io.github.garemat.crumpet.gym.GymSyncWorker
 import io.github.garemat.crumpet.gym.LibraryExercise
 import io.github.garemat.crumpet.gym.Routine
 import io.github.garemat.crumpet.gym.SessionOps
+import io.github.garemat.crumpet.data.Prefs
+import io.github.garemat.crumpet.gym.HistoryOps
+import io.github.garemat.crumpet.gym.HistorySession
+import io.github.garemat.crumpet.net.Net
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +53,47 @@ class GymViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refresh() = GymSyncWorker.kick(getApplication())
+
+    // --- history: queued sessions + the cached newest page + any older pages loaded ---
+    private val older = MutableStateFlow<List<HistorySession>>(emptyList())
+    private val _olderMore = MutableStateFlow<Boolean?>(null)  // null = not paged yet
+    private val _historyNote = MutableStateFlow("")
+    val historyNote: StateFlow<String> = _historyNote.asStateFlow()
+
+    val history: StateFlow<List<HistorySession>> =
+        combine(store.history, store.outbox, older) { page, box, old ->
+            HistoryOps.merge(HistoryOps.pending(box), page.sessions + old)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val historyMore: StateFlow<Boolean> =
+        combine(store.history, _olderMore) { page, o -> o ?: page.more }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun loadOlder() = viewModelScope.launch {
+        val last = history.value.lastOrNull { !it.pending } ?: return@launch
+        val (base, token, _) = Prefs(getApplication()).config()
+        runCatching { Net.gymHistory(base, token, before = last.at) }
+            .onSuccess { p -> older.value = older.value + p.sessions; _olderMore.value = p.more; _historyNote.value = "" }
+            .onFailure { _historyNote.value = "Couldn't reach Crumpet — older sessions need signal." }
+    }
+
+    private val _exerciseHistory = MutableStateFlow<Pair<String, List<HistorySession>>>("" to emptyList())
+    val exerciseHistory: StateFlow<Pair<String, List<HistorySession>>> = _exerciseHistory.asStateFlow()
+
+    /** One lift's sessions: from the brain (the whole history), else what's cached here. */
+    fun loadExercise(name: String) = viewModelScope.launch {
+        _exerciseHistory.value = name to HistoryOps.forExercise(history.value, name)
+        val (base, token, _) = Prefs(getApplication()).config()
+        runCatching { Net.gymHistory(base, token, limit = 50, exercise = name) }.onSuccess { p ->
+            val queued = HistoryOps.forExercise(history.value.filter { it.pending }, name)
+            _exerciseHistory.value = name to HistoryOps.merge(queued, p.sessions)
+        }
+    }
+
+    fun replaceExercise(exKey: Long, rawName: String) {
+        val name = Canon.lift(rawName)
+        if (name.isNotBlank()) edit { SessionOps.replaceExercise(it, exKey, name, info(name)) }
+    }
 
     fun loadLibrary() {
         if (_library.value.isNotEmpty()) return

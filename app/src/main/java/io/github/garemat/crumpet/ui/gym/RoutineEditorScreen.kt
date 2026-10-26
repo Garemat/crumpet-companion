@@ -53,6 +53,7 @@ fun RoutineEditorScreen(vm: GymViewModel, routineId: String, onDone: () -> Unit)
     var name by remember { mutableStateOf(original.name) }
     var body by remember { mutableStateOf(original.body) }
     var picking by remember { mutableStateOf(false) }
+    var replacingAt by remember { mutableStateOf<Int?>(null) }
 
     fun set(i: Int, f: (RoutineExercise) -> RoutineExercise) {
         body = body.mapIndexed { j, e -> if (j == i) f(e) else e }
@@ -85,6 +86,7 @@ fun RoutineEditorScreen(vm: GymViewModel, routineId: String, onDone: () -> Unit)
                         if (i < body.lastIndex) TextButton(onClick = {
                             body = body.toMutableList().apply { add(i + 1, removeAt(i)) }
                         }) { Text("↓", color = Muted) }
+                        TextButton(onClick = { replacingAt = i }) { Text("⇄", color = Brass) }
                         TextButton(onClick = { body = body.filterIndexed { j, _ -> j != i } }) { Text("✕", color = Coral) }
                     }
                     val warm = e.sets.count { it.type == "warmup" }
@@ -128,6 +130,13 @@ fun RoutineEditorScreen(vm: GymViewModel, routineId: String, onDone: () -> Unit)
         }
     }
 
+    // Replace keeps the slot's sets / rep range / rest / superset — just a different lift.
+    replacingAt?.let { i ->
+        ExercisePicker(vm, onDismiss = { replacingAt = null }) { raw ->
+            set(i) { it.copy(exercise = Canon.lift(raw), target = null) }
+            replacingAt = null
+        }
+    }
     if (picking) ExercisePicker(vm, onDismiss = { picking = false }) { raw ->
         body = body + RoutineExercise(Canon.lift(raw))
         picking = false
