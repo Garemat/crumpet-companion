@@ -20,6 +20,7 @@ object SessionOps {
                 key = ++key, exercise = re.exercise, superset = re.superset,
                 restS = info[re.exercise]?.pref?.restS ?: re.restS,
                 repMin = re.repMin, repMax = re.repMax, note = re.note, sets = sets,
+                target = re.target ?: info[re.exercise]?.target,
             )
         }
         return ActiveSession(uid, routine.id.takeUnless { it.startsWith("card-") }, routine.name,
@@ -71,7 +72,8 @@ object SessionOps {
         val base = nextKey(s)
         val re = RoutineExercise(name, restS = info?.pref?.restS ?: 90, target = info?.target)
         val sets = prefill(re, info).mapIndexed { i, set -> set.copy(key = base + 1 + i) }
-        return s.copy(exercises = s.exercises + ActiveExercise(base, name, restS = re.restS, sets = sets))
+        return s.copy(exercises = s.exercises + ActiveExercise(base, name, restS = re.restS, sets = sets,
+            target = info?.target))
     }
 
     fun removeExercise(s: ActiveSession, exKey: Long) =

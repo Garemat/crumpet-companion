@@ -37,7 +37,12 @@ import io.github.garemat.crumpet.geo.PresenceWorker
 import io.github.garemat.crumpet.push.PresenceService
 import io.github.garemat.crumpet.sync.SyncWorker
 import io.github.garemat.crumpet.ui.AppViewModel
-import io.github.garemat.crumpet.ui.screens.AppsScreen
+import io.github.garemat.crumpet.ui.gym.GymHomeScreen
+import io.github.garemat.crumpet.ui.gym.GymViewModel
+import io.github.garemat.crumpet.ui.gym.RoutineEditorScreen
+import io.github.garemat.crumpet.ui.gym.SessionScreen
+import io.github.garemat.crumpet.ui.screens.AppsHubScreen
+import io.github.garemat.crumpet.ui.screens.WebAppsScreen
 import io.github.garemat.crumpet.ui.screens.CalendarScreen
 import io.github.garemat.crumpet.ui.screens.ChatScreen
 import io.github.garemat.crumpet.ui.screens.HealthScreen
@@ -69,7 +74,7 @@ private enum class Dest(val route: String, val label: String, val icon: ImageVec
 }
 
 @Composable
-private fun CrumpetApp(vm: AppViewModel = viewModel()) {
+private fun CrumpetApp(vm: AppViewModel = viewModel(), gym: GymViewModel = viewModel()) {
     val nav = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -95,7 +100,10 @@ private fun CrumpetApp(vm: AppViewModel = viewModel()) {
                 val current by nav.currentBackStackEntryAsState()
                 val route = current?.destination
                 Dest.entries.forEach { d ->
-                    val selected = route?.hierarchy?.any { it.route == d.route } == true
+                    // Screens opened from the Apps launcher keep the Apps tab lit.
+                    val inApps = route?.route?.let { it == "webapps" || it.startsWith("gym") } == true
+                    val selected = route?.hierarchy?.any { it.route == d.route } == true ||
+                        (d == Dest.Apps && inApps)
                     NavigationBarItem(
                         selected = selected,
                         onClick = {
@@ -124,7 +132,29 @@ private fun CrumpetApp(vm: AppViewModel = viewModel()) {
             composable(Dest.Health.route) { HealthScreen(vm) }
             composable(Dest.Calendar.route) { CalendarScreen(vm) }
             composable(Dest.Chat.route) { ChatScreen(vm) }
-            composable(Dest.Apps.route) { AppsScreen(vm) }
+            // Apps = a launcher: native apps (Gym) + Crumpet's web apps (the WebView launcher).
+            composable(Dest.Apps.route) {
+                val active by gym.active.collectAsStateWithLifecycle()
+                AppsHubScreen(
+                    gymSubtitle = active?.let { "In progress · ${it.title}" } ?: "Routines, sessions, PRs",
+                    onGym = { nav.navigate(if (active != null) "gym/session" else "gym") },
+                    onWebApps = { nav.navigate("webapps") },
+                )
+            }
+            composable("webapps") { WebAppsScreen(vm) }
+            composable("gym") {
+                GymHomeScreen(gym,
+                    onSession = { nav.navigate("gym/session") { launchSingleTop = true } },
+                    onEditRoutine = { id -> nav.navigate("gym/routine/$id") })
+            }
+            composable("gym/session") {
+                SessionScreen(gym, onExit = {
+                    nav.navigate("gym") { popUpTo("gym") { inclusive = true }; launchSingleTop = true }
+                })
+            }
+            composable("gym/routine/{id}") { entry ->
+                RoutineEditorScreen(gym, entry.arguments?.getString("id") ?: "new", onDone = { nav.popBackStack() })
+            }
             composable("places") { PlacesScreen() }
             composable(Dest.Setup.route) {
                 SetupScreen(

@@ -38,7 +38,7 @@ private fun inject(view: WebView, token: String) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun AppsScreen(vm: AppViewModel) {
+fun WebAppsScreen(vm: AppViewModel) {
     val token by vm.token.collectAsStateWithLifecycle()
     val latestToken = rememberUpdatedState(token)
     var web by remember { mutableStateOf<WebView?>(null) }
