@@ -152,12 +152,20 @@ object SessionOps {
         clearWeight: Boolean = false, clearReps: Boolean = false,
     ) = s.mapEx(exKey) { ex ->
         ex.copy(sets = ex.sets.map { set ->
-            if (set.key != setKey) set else set.copy(
-                weight = if (clearWeight) null else weight ?: set.weight,
-                reps = if (clearReps) null else reps ?: set.reps,
-                type = type ?: set.type,
-                dropOf = if (type != null && type != "drop") null else set.dropOf,
-            )
+            if (set.key != setKey) set else {
+                val typed = clearWeight || clearReps || weight != null || reps != null
+                set.copy(
+                    weight = if (clearWeight) null else weight ?: set.weight,
+                    reps = if (clearReps) null else reps ?: set.reps,
+                    type = type ?: set.type,
+                    dropOf = if (type != null && type != "drop") null else set.dropOf,
+                    // typing takes the row over from the auto-adjust for good
+                    edited = set.edited || typed,
+                    auto = if (typed) 0 else set.auto,
+                    autoFrom = if (typed) null else set.autoFrom,
+                    autoBase = if (typed) null else set.autoBase,
+                )
+            }
         })
     }
 
@@ -172,7 +180,63 @@ object SessionOps {
                 if (it.key == setKey && (it.done || (it.reps ?: 0) > 0)) it.copy(done = !it.done) else it
             })
         }
-        return rejudge(ticked, exKey, info)
+        return rejudge(autoregulate(ticked, exKey, setKey, info), exKey, info)
+    }
+
+    const val BEAT_BY = 2   // reps over target that earn the remaining sets a step up
+    const val MISS_BY = 3   // reps under target that take them a step down
+
+    /** In-session adjustment, deterministic: tick a set done AT THE TARGET WEIGHT with
+     *  [BEAT_BY]+ reps over the target → the exercise's remaining untouched working sets
+     *  go up one weight step; [MISS_BY]+ under → down one (assisted lifts invert: beating
+     *  it means less help). Once per exercise; rows the user typed into are never touched;
+     *  unticking the trigger puts the old weights back. */
+    fun autoregulate(s: ActiveSession, exKey: Long, setKey: Long, info: ExerciseInfo?): ActiveSession =
+        s.mapEx(exKey) { ex ->
+            val i = ex.sets.indexOfFirst { it.key == setKey }
+            val trigger = ex.sets.getOrNull(i) ?: return@mapEx ex
+            if (!trigger.done) {  // unticked → undo what it did
+                return@mapEx ex.copy(sets = ex.sets.map {
+                    if (it.autoFrom == setKey && !it.edited && !it.done)
+                        it.copy(weight = it.autoBase, auto = 0, autoFrom = null, autoBase = null) else it
+                })
+            }
+            val target = ex.target ?: return@mapEx ex
+            val tw = target.weight ?: return@mapEx ex
+            val w = trigger.weight ?: return@mapEx ex
+            val reps = trigger.reps ?: return@mapEx ex
+            if (trigger.type !in WORK || Math.abs(w - tw) > 0.01) return@mapEx ex
+            if (ex.sets.any { it.autoFrom != null }) return@mapEx ex  // once per exercise
+            val dir = when {
+                reps >= target.reps + BEAT_BY -> 1
+                reps <= target.reps - MISS_BY -> -1
+                else -> return@mapEx ex
+            }
+            val step = (info?.increment ?: 2.5) * dir * if (info?.assisted == true) -1 else 1
+            ex.copy(sets = ex.sets.mapIndexed { j, set ->
+                val sw = set.weight
+                if (j <= i || set.done || set.edited || set.type !in WORK || sw == null) set
+                else {
+                    val nw = Math.round((sw + step) * 100) / 100.0
+                    if (nw <= 0) set else set.copy(weight = nw, auto = dir, autoFrom = setKey, autoBase = sw)
+                }
+            })
+        }
+
+    private val WORK = setOf("working", "failure")
+
+    /** Seconds of rest after ticking this set, or null for none: no rest straight into a
+     *  drop set (that's the point of it); inside a superset only after the group's LAST
+     *  exercise — the others go straight to the next lift. */
+    fun restAfter(s: ActiveSession, exKey: Long, setKey: Long): Int? {
+        val ex = s.exercises.firstOrNull { it.key == exKey } ?: return null
+        val i = ex.sets.indexOfFirst { it.key == setKey }
+        if (ex.sets.getOrNull(i + 1)?.type == "drop") return null
+        ex.superset?.let { tag ->
+            val last = s.exercises.lastOrNull { it.superset == tag }
+            if (last?.key != ex.key) return null
+        }
+        return ex.restS.takeIf { it > 0 }
     }
 
     /** PR kinds for every ticked set of one exercise, in list order, compounding — exactly

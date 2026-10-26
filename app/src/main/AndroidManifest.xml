@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Gym: the workout/rest-timer service (a timer is the textbook "special use"), a
+         partial wake lock only for the length of a rest, and the buzz at zero. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Presence: geofencing computed ON-DEVICE (geo/PresenceWorker) — coordinates never
          leave the phone, only place labels. Background = the periodic check keeps working
@@ -87,6 +92,16 @@
             android:name=".push.PresenceService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Workout in progress + rest countdown (gym/GymSessionService) -->
+        <service
+            android:name=".gym.GymSessionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Workout session and rest timer: an ongoing countdown that alerts at zero with the screen off." />
+        </service>
 
         <!-- Hands the downloaded update APK to the installer -->
         <provider

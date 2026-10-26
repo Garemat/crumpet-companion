@@ -83,6 +83,7 @@ fun SessionScreen(vm: GymViewModel, onExit: () -> Unit, onExercise: (String) -> 
     val session by vm.active.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
+    val rest by vm.rest.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf(false) }
     var confirmFinish by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -127,6 +128,7 @@ fun SessionScreen(vm: GymViewModel, onExit: () -> Unit, onExercise: (String) -> 
                 }
             }
         }
+        rest?.let { r -> RestBar(r, now, onAdd = vm::restAdd, onSkip = vm::restSkip) }
     }
 
     if (picking) ExercisePicker(vm, onDismiss = { picking = false }) { vm.addExercise(it); picking = false }
@@ -299,6 +301,27 @@ private fun matchPrevious(sets: List<ActiveSet>, last: List<LastSet>): List<Last
     }
 }
 
+/** The rest countdown pinned under the list — the same timer the lock-screen notification
+ *  shows, so ±15s here and there agree. */
+@Composable
+private fun RestBar(r: io.github.garemat.crumpet.gym.RestTimer.Rest, now: Long, onAdd: (Int) -> Unit, onSkip: () -> Unit) {
+    val left = ((r.endsAt - now + 999) / 1000).coerceAtLeast(0)
+    Column(Modifier.fillMaxWidth().background(Bg3).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Rest  %d:%02d".format(left / 60, left % 60), color = Cream, fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold)
+                if (r.label.isNotBlank()) Text("next: ${r.label}", color = Muted, fontSize = 11.5.sp)
+            }
+            TextButton(onClick = { onAdd(-15) }) { Text("−15", color = Muted, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = { onAdd(15) }) { Text("+15", color = Muted, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = onSkip) { Text("Skip", color = Brass, fontWeight = FontWeight.Bold) }
+        }
+        io.github.garemat.crumpet.ui.screens.Meter(left.toFloat() / r.totalS.coerceAtLeast(1), Jade,
+            Modifier.padding(top = 6.dp))
+    }
+}
+
 /** Swipe a set row left to delete it (the Hevy gesture); the coral strip says what'll happen. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -348,6 +371,10 @@ private fun SetRow(vm: GymViewModel, ex: ActiveExercise, set: ActiveSet, label: 
         }
         Column(Modifier.weight(1.3f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(prev?.let { fmtSet(it.weight, it.reps) } ?: "—", color = Faint, fontSize = 12.5.sp)
+            if (set.auto != 0 && !done) {
+                Text(if (set.auto > 0) "↑ stepped up" else "↓ eased off",
+                    color = if (set.auto > 0) Jade else Coral, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
             if (set.prs.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.EmojiEvents, "PR", tint = Brass, modifier = Modifier.size(12.dp))

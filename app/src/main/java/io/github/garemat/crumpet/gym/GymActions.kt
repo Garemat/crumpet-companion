@@ -21,11 +21,13 @@ class GymActions(private val context: Context) {
     suspend fun start(routine: Routine) {
         store.setActive(SessionOps.fromRoutine(routine, store.state.value.exercises,
             UUID.randomUUID().toString(), now(), System.currentTimeMillis()))
+        GymSessionService.start(context)
     }
 
     suspend fun startEmpty(title: String = "Workout") {
         store.setActive(SessionOps.empty(UUID.randomUUID().toString(), title, now(),
             System.currentTimeMillis()))
+        GymSessionService.start(context)
     }
 
     /** Persist an edit to the in-progress session (the screens call this on every change). */

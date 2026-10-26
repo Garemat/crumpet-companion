@@ -63,7 +63,27 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         SyncWorker.schedule(applicationContext)
         PresenceWorker.schedule(applicationContext)
+        // A workout survives the app being killed (it's on disk) — bring its notification back.
+        if (io.github.garemat.crumpet.gym.GymStore.get(this).active.value != null) {
+            io.github.garemat.crumpet.gym.GymSessionService.start(this)
+        }
+        takeRoute(intent)
         setContent { CrumpetTheme { CrumpetApp() } }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        takeRoute(intent)
+    }
+
+    private fun takeRoute(intent: android.content.Intent?) {
+        intent?.getStringExtra(EXTRA_ROUTE)?.let { pendingRoute.value = it }
+    }
+
+    companion object {
+        const val EXTRA_ROUTE = "crumpet.route"
+        /** A screen a notification asked to open (e.g. the workout); consumed by the nav host. */
+        val pendingRoute = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     }
 }
 
@@ -87,6 +107,11 @@ private fun CrumpetApp(vm: AppViewModel = viewModel(), gym: GymViewModel = viewM
     val pairedToken by vm.token.collectAsStateWithLifecycle()
     LaunchedEffect(pairedUrl, pairedToken) {
         if (pairedUrl.isNotBlank() && pairedToken.isNotBlank()) PresenceService.start(context)
+    }
+
+    val route by MainActivity.pendingRoute.collectAsStateWithLifecycle()
+    LaunchedEffect(route) {
+        route?.let { nav.navigate(it) { launchSingleTop = true }; MainActivity.pendingRoute.value = null }
     }
 
     val healthLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
