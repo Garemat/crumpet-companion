@@ -124,6 +124,7 @@ data class ActiveExercise(
     val repMax: Int = 12,
     val note: String = "",
     val sets: List<ActiveSet> = emptyList(),
+    val target: GymTarget? = null,  // what the rows were pre-filled from (shown in the header)
 )
 
 @Serializable
