@@ -18,6 +18,7 @@ import io.github.garemat.crumpet.data.day
 import io.github.garemat.crumpet.data.startMillis
 import io.github.garemat.crumpet.audio.VoiceSession
 import io.github.garemat.crumpet.health.HealthRepo
+import io.github.garemat.crumpet.health.SyncWindow
 import io.github.garemat.crumpet.net.Net
 import io.github.garemat.crumpet.push.SpotifyWake
 import io.github.garemat.crumpet.sync.CalendarSyncWorker
@@ -240,11 +241,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     val missing = health.missingTypes()
                     val note = if (missing.isEmpty()) ""
                                else " Not synced (permission off): ${missing.joinToString(", ")} — tap Grant above."
-                    val records = health.recentRecords(30)
+                    val records = health.recentRecords(SyncWindow.days(prefs.config().third))
                     if (records.isEmpty())
                         "Read 0 records from Health Connect — nothing's being written there yet (check the source apps, e.g. MyFitnessPal → Health Connect).$note"
                     else {
                         val c = Net.ingest(base, tok, records).counts
+                        prefs.setWatermark(System.currentTimeMillis())  // a success, like the worker's
                         val parts = listOf("nutrition", "weight", "steps", "sleep", "workouts")
                             .mapNotNull { k -> c[k]?.takeIf { it > 0 }?.let { "$it $k" } }
                         "Synced ${records.size} record(s)" +

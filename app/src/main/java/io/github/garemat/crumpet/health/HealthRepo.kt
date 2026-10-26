@@ -67,10 +67,20 @@ class HealthRepo(private val context: Context) {
     private fun day(i: Instant): String = LocalDate.ofInstant(i, zone).toString()
     private val atFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
+    /** Every record in the range — ALL pages. readRecords returns at most 1000 per call, and
+     *  steps arrive as many small intervals, so one page silently dropped the newest days. */
     private suspend fun <T : Record> read(type: KClass<T>, since: Instant, until: Instant): List<T> {
         val c = client ?: return emptyList()
         return runCatching {
-            c.readRecords(ReadRecordsRequest(type, TimeRangeFilter.between(since, until))).records
+            val out = mutableListOf<T>()
+            var page: String? = null
+            do {
+                val resp = c.readRecords(
+                    ReadRecordsRequest(type, TimeRangeFilter.between(since, until), pageToken = page))
+                out += resp.records
+                page = resp.pageToken
+            } while (!page.isNullOrEmpty())
+            out
         }.getOrDefault(emptyList())
     }
 

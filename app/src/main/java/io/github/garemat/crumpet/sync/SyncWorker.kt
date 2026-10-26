@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import io.github.garemat.crumpet.data.Prefs
 import io.github.garemat.crumpet.health.HealthRepo
+import io.github.garemat.crumpet.health.SyncWindow
 import io.github.garemat.crumpet.net.Net
 import java.util.concurrent.TimeUnit
 
@@ -28,8 +29,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         if (!repo.available || !repo.hasAnyPermission()) return Result.success()
 
         return try {
-            // Rolling window + idempotent brain → no watermark gymnastics, nothing missed.
-            Net.ingest(base, token, repo.recentRecords(30))
+            // Rolling window + idempotent brain; the window stretches back over any downtime
+            // since the last success, so a long-offline brain still gets everything.
+            Net.ingest(base, token, repo.recentRecords(SyncWindow.days(watermark)))
             prefs.setWatermark(System.currentTimeMillis())
             Result.success()
         } catch (_: Exception) {
