@@ -70,6 +70,7 @@ data class ExercisePref(
 data class ExerciseInfo(
     val family: String = "",
     val assisted: Boolean = false,
+    val increment: Double? = null,  // this lift's weight step (theirs, else inferred)
     val last: LastSession? = null,
     val bests: Bests = Bests(),
     val target: GymTarget? = null,
@@ -112,6 +113,10 @@ data class ActiveSet(
     val done: Boolean = false,
     val dropOf: Int? = null,       // 1-based index of the set this drop chains from
     val prs: List<String> = emptyList(),  // PR kinds this set set (when ticked)
+    val edited: Boolean = false,   // the user typed into it → never auto-adjusted
+    val auto: Int = 0,             // +1 / -1: weight auto-adjusted mid-session (shown as ↑/↓)
+    val autoFrom: Long? = null,    // the ticked set that triggered it (unticking reverts)
+    val autoBase: Double? = null,  // the weight before the adjustment
 )
 
 @Serializable

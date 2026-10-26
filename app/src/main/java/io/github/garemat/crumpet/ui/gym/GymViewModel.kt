@@ -104,7 +104,11 @@ class GymViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The weight step for drop sets: the user's own setting, else what the brain inferred
      *  shows up as their usual jumps — fall back to 2.5 kg. */
-    fun increment(name: String): Double = info(name)?.pref?.increment ?: 2.5
+    fun increment(name: String): Double = info(name)?.increment ?: info(name)?.pref?.increment ?: 2.5
+
+    val rest = io.github.garemat.crumpet.gym.RestTimer.rest
+    fun restAdd(s: Int) = io.github.garemat.crumpet.gym.RestTimer.add(s)
+    fun restSkip() = io.github.garemat.crumpet.gym.RestTimer.skip()
 
     fun dropOk(name: String): Boolean = info(name)?.pref?.dropOk ?: false
 
@@ -119,8 +123,27 @@ class GymViewModel(app: Application) : AndroidViewModel(app) {
         edit { SessionOps.addExercise(it, name, info(name)) }
     }
 
-    fun toggle(exKey: Long, setKey: Long, exercise: String) =
-        edit { SessionOps.toggleDone(it, exKey, setKey, info(exercise)) }
+    /** Tick → PRs + the in-session adjustment (SessionOps), then rest if the set says so. */
+    fun toggle(exKey: Long, setKey: Long, exercise: String) = viewModelScope.launch {
+        actions.update { SessionOps.toggleDone(it, exKey, setKey, info(exercise)) }
+        val s = active.value ?: return@launch
+        val ex = s.exercises.firstOrNull { it.key == exKey } ?: return@launch
+        val set = ex.sets.firstOrNull { it.key == setKey } ?: return@launch
+        if (!set.done) return@launch
+        val secs = SessionOps.restAfter(s, exKey, setKey) ?: run { restSkip(); return@launch }
+        io.github.garemat.crumpet.gym.RestTimer.start(secs, nextLabel(s, exKey, setKey))
+    }
+
+    /** "Chest Press (Machine) · set 3" — what the rest is before, for the notification. */
+    private fun nextLabel(s: ActiveSession, exKey: Long, setKey: Long): String {
+        val ex = s.exercises.first { it.key == exKey }
+        val i = ex.sets.indexOfFirst { it.key == setKey }
+        val nextHere = ex.sets.drop(i + 1).firstOrNull { !it.done }
+        if (nextHere != null) return "${Canon.pretty(ex.exercise)} · set ${ex.sets.indexOf(nextHere) + 1}"
+        val group = ex.superset?.let { tag -> s.exercises.firstOrNull { it.superset == tag && it.sets.any { x -> !x.done } } }
+        val next = group ?: s.exercises.dropWhile { it.key != exKey }.drop(1).firstOrNull { it.sets.any { x -> !x.done } }
+        return next?.let { Canon.pretty(it.exercise) } ?: "you're done"
+    }
 
     /** Number edits re-judge PRs too — changing a ticked set's reps can make or unmake one. */
     fun setNumbers(exKey: Long, setKey: Long, exercise: String, weight: Double?, reps: Int?,
