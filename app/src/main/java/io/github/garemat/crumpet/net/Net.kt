@@ -28,6 +28,7 @@ import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.prepareGet
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -129,6 +130,58 @@ object Net {
             200 -> null
             400 -> resp.bodyAsText().take(200).ifBlank { "the brain refused it" }
             else -> throw IllegalStateException("calendar delete ${resp.status.value}")
+        }
+    }
+
+    // ---- gym logger (crumpet core/gym.py; docs/backlog/gym-logger.md) ----
+
+    suspend fun gymState(base: String, token: String): io.github.garemat.crumpet.gym.GymState {
+        val resp = client.get("$base/gym/state") { header("X-Crumpet-Token", token) }
+        if (resp.status.value != 200) throw IllegalStateException("gym state ${resp.status.value}")
+        return json.decodeFromString(resp.bodyAsText())
+    }
+
+    /** (etag, library), or null when our [etag] is still current (304). */
+    suspend fun gymLibrary(base: String, token: String, etag: String):
+        Pair<String, io.github.garemat.crumpet.gym.Library>? {
+        val resp = client.get("$base/gym/library") {
+            header("X-Crumpet-Token", token)
+            if (etag.isNotBlank()) header(HttpHeaders.IfNoneMatch, "\"$etag\"")
+        }
+        return when (resp.status.value) {
+            304 -> null
+            200 -> (resp.headers[HttpHeaders.ETag] ?: "").trim('"') to
+                json.decodeFromString(resp.bodyAsText())
+            else -> throw IllegalStateException("gym library ${resp.status.value}")
+        }
+    }
+
+    sealed interface GymWrite {
+        data class Ok(val body: String) : GymWrite
+        data class Refused(val reason: String) : GymWrite
+    }
+
+    /** One outbox item, the calendar contract: 200 → Ok, 400 → Refused (drop it), anything
+     *  else → throw so the drain stops and retries later. */
+    suspend fun gymSend(base: String, token: String, item: io.github.garemat.crumpet.gym.GymOutboxItem): GymWrite {
+        val url = "$base${item.path}"
+        val resp = when (item.method) {
+            "DELETE" -> client.delete(url) { header("X-Crumpet-Token", token) }
+            "PUT" -> client.put(url) {
+                header("X-Crumpet-Token", token)
+                contentType(ContentType.Application.Json)
+                setBody(item.body)
+            }
+            else -> client.post(url) {
+                header("X-Crumpet-Token", token)
+                contentType(ContentType.Application.Json)
+                setBody(item.body)
+            }
+        }
+        return when (resp.status.value) {
+            200 -> GymWrite.Ok(resp.bodyAsText())
+            400 -> GymWrite.Refused(resp.bodyAsText().take(200).ifBlank { "the brain refused it" })
+            else -> throw IllegalStateException("gym write ${resp.status.value}")
         }
     }
 
