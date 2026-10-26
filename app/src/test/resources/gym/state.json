@@ -1,0 +1,292 @@
+{
+ "server_time": 1793040392809,
+ "routines": [
+  {
+   "id": "r2",
+   "name": "Old",
+   "position": 0,
+   "body": [
+    {
+     "exercise": "x",
+     "superset": null,
+     "rest_s": 90,
+     "rep_min": 8,
+     "rep_max": 12,
+     "sets": [
+      {
+       "type": "working"
+      }
+     ],
+     "note": ""
+    }
+   ],
+   "updated_at": 2000,
+   "deleted": true
+  },
+  {
+   "id": "r1",
+   "name": "Push",
+   "position": 0,
+   "body": [
+    {
+     "exercise": "chest press (machine)",
+     "superset": null,
+     "rest_s": 120,
+     "rep_min": 8,
+     "rep_max": 12,
+     "sets": [
+      {
+       "type": "warmup"
+      },
+      {
+       "type": "working"
+      },
+      {
+       "type": "working"
+      }
+     ],
+     "note": "",
+     "target": {
+      "weight": 65.0,
+      "reps": 8,
+      "reason": "progress",
+      "stalled": false,
+      "carried_by": null
+     }
+    },
+    {
+     "exercise": "triceps dip",
+     "superset": "A",
+     "rest_s": 90,
+     "rep_min": 8,
+     "rep_max": 12,
+     "sets": [
+      {
+       "type": "working"
+      },
+      {
+       "type": "working"
+      }
+     ],
+     "note": "",
+     "target": {
+      "weight": null,
+      "reps": 7,
+      "reason": "reps",
+      "stalled": true,
+      "carried_by": null
+     }
+    }
+   ],
+   "updated_at": 1000,
+   "deleted": false
+  }
+ ],
+ "card": {
+  "id": "card-2026-10-26",
+  "name": "push",
+  "day": "2026-10-26",
+  "status": "planned",
+  "body": [
+   {
+    "exercise": "chest press (machine)",
+    "superset": null,
+    "rest_s": 90,
+    "rep_min": 8,
+    "rep_max": 10,
+    "sets": [
+     {
+      "type": "working"
+     },
+     {
+      "type": "working"
+     },
+     {
+      "type": "working"
+     }
+    ],
+    "note": "",
+    "target": {
+     "weight": 55.0,
+     "reps": 8,
+     "reason": "crumpet",
+     "stalled": false,
+     "carried_by": null
+    }
+   }
+  ]
+ },
+ "exercises": {
+  "chest press (machine)": {
+   "family": "chest press",
+   "assisted": false,
+   "last": {
+    "day": "2026-10-22",
+    "sets": [
+     {
+      "weight": 40.0,
+      "reps": 15,
+      "type": "warmup"
+     },
+     {
+      "weight": 60.0,
+      "reps": 12,
+      "type": "working"
+     },
+     {
+      "weight": 60.0,
+      "reps": 12,
+      "type": "working"
+     },
+     {
+      "weight": 45.0,
+      "reps": 10,
+      "type": "drop"
+     }
+    ]
+   },
+   "bests": {
+    "max_weight": 60.0,
+    "best_e1rm": 84.0,
+    "best_volume": 720.0,
+    "reps_at": {
+     "60": 12
+    }
+   },
+   "target": {
+    "weight": 65.0,
+    "reps": 8,
+    "reason": "progress",
+    "stalled": false,
+    "carried_by": null
+   },
+   "pref": {
+    "note": "seat on 4",
+    "increment": 5.0,
+    "drop_ok": null,
+    "rest_s": null,
+    "updated_at": 7
+   }
+  },
+  "pull up (assisted)": {
+   "family": "pull up",
+   "assisted": true,
+   "last": {
+    "day": "2026-10-22",
+    "sets": [
+     {
+      "weight": 54.0,
+      "reps": 6,
+      "type": "working"
+     }
+    ]
+   },
+   "bests": {
+    "max_weight": null,
+    "best_e1rm": null,
+    "best_volume": null,
+    "reps_at": {
+     "54": 6
+    }
+   },
+   "target": {
+    "weight": 59.0,
+    "reps": 8,
+    "reason": "deload",
+    "stalled": true,
+    "carried_by": null
+   },
+   "pref": {
+    "note": "",
+    "increment": null,
+    "drop_ok": false,
+    "rest_s": null,
+    "updated_at": 0
+   }
+  },
+  "shoulder press (machine plates)": {
+   "family": "shoulder press",
+   "assisted": false,
+   "last": {
+    "day": "2026-10-22",
+    "sets": [
+     {
+      "weight": 60.0,
+      "reps": 9,
+      "type": "working"
+     },
+     {
+      "weight": 60.0,
+      "reps": 8,
+      "type": "working"
+     }
+    ]
+   },
+   "bests": {
+    "max_weight": 60.0,
+    "best_e1rm": 78.0,
+    "best_volume": 540.0,
+    "reps_at": {
+     "50": 9,
+     "55": 9,
+     "60": 9
+    }
+   },
+   "target": {
+    "weight": 60.0,
+    "reps": 9,
+    "reason": "reps",
+    "stalled": false,
+    "carried_by": null
+   },
+   "pref": {
+    "note": "",
+    "increment": null,
+    "drop_ok": true,
+    "rest_s": null,
+    "updated_at": 0
+   }
+  },
+  "triceps dip": {
+   "family": "triceps dip",
+   "assisted": false,
+   "last": {
+    "day": "2026-10-22",
+    "sets": [
+     {
+      "weight": null,
+      "reps": 6,
+      "type": "working"
+     },
+     {
+      "weight": null,
+      "reps": 6,
+      "type": "working"
+     }
+    ]
+   },
+   "bests": {
+    "max_weight": null,
+    "best_e1rm": null,
+    "best_volume": null,
+    "reps_at": {
+     "bw": 6
+    }
+   },
+   "target": {
+    "weight": null,
+    "reps": 7,
+    "reason": "reps",
+    "stalled": true,
+    "carried_by": null
+   },
+   "pref": {
+    "note": "",
+    "increment": null,
+    "drop_ok": false,
+    "rest_s": null,
+    "updated_at": 0
+   }
+  }
+ }
+}

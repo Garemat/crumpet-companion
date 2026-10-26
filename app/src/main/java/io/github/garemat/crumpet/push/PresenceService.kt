@@ -78,6 +78,7 @@ class PresenceService : Service() {
                     if (now && !wasConnected) {
                         SyncWorker.syncOnce(applicationContext)
                         CalendarSyncWorker.kick(applicationContext)
+                        io.github.garemat.crumpet.gym.GymSyncWorker.kick(applicationContext)
                         // Presence events queued while the tunnel was down drain now too.
                         PresenceWorker.kick(applicationContext)
                     }
